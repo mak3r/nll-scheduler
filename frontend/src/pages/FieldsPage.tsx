@@ -36,6 +36,9 @@ export default function FieldsPage() {
   const [newWindow, setNewWindow] = useState<Record<string, WindowForm>>({})
   const [newBlackout, setNewBlackout] = useState<Record<string, BlackoutForm>>({})
 
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
+  const [editFieldForm, setEditFieldForm] = useState({ name: '', address: '', maxGamesPerDay: 4 })
+
   useEffect(() => { loadFields() }, [])
 
   async function loadFields() {
@@ -82,6 +85,29 @@ export default function FieldsPage() {
         is_active: true,
       })
       setNewField({ name: '', address: '', maxGamesPerDay: 4 })
+      await loadFields()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  function startEditField(field: Field) {
+    setEditingFieldId(field.id)
+    setEditFieldForm({
+      name: field.name,
+      address: field.address ?? '',
+      maxGamesPerDay: field.max_games_per_day,
+    })
+  }
+
+  async function saveField(id: string) {
+    try {
+      await fieldsApiClient.update(id, {
+        name: editFieldForm.name,
+        address: editFieldForm.address || undefined,
+        max_games_per_day: editFieldForm.maxGamesPerDay,
+      })
+      setEditingFieldId(null)
       await loadFields()
     } catch (e) {
       setError(String(e))
@@ -246,22 +272,46 @@ export default function FieldsPage() {
 
       {fields.map(field => (
         <div key={field.id} className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <strong style={{ fontSize: '1.05rem' }}>{field.name}</strong>
-              {field.address && (
-                <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.9rem' }}>{field.address}</span>
-              )}
-              <span style={{ marginLeft: '1rem', color: '#888', fontSize: '0.85rem' }}>
-                Max {field.max_games_per_day} games/day
-              </span>
-              {!field.is_active && (
-                <span style={{ marginLeft: '0.75rem', background: '#eee', padding: '1px 8px', borderRadius: 10, fontSize: '0.8rem', color: '#666' }}>
-                  Inactive
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {editingFieldId === field.id ? (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <label style={{ fontSize: '0.9rem' }}>
+                  Name<br />
+                  <input value={editFieldForm.name} onChange={e => setEditFieldForm(p => ({ ...p, name: e.target.value }))} style={inputStyle} />
+                </label>
+                <label style={{ fontSize: '0.9rem' }}>
+                  Address<br />
+                  <input value={editFieldForm.address} onChange={e => setEditFieldForm(p => ({ ...p, address: e.target.value }))} placeholder="optional" style={{ ...inputStyle, minWidth: 160 }} />
+                </label>
+                <label style={{ fontSize: '0.9rem' }}>
+                  Max Games/Day<br />
+                  <input type="number" value={editFieldForm.maxGamesPerDay} min={1} onChange={e => setEditFieldForm(p => ({ ...p, maxGamesPerDay: Number(e.target.value) }))} style={{ ...inputStyle, width: 80 }} />
+                </label>
+                <div style={{ display: 'flex', gap: '0.25rem', alignSelf: 'flex-end' }}>
+                  <button onClick={() => saveField(field.id)} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Save</button>
+                  <button onClick={() => setEditingFieldId(null)} className="btn" style={{ fontSize: '0.85rem' }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <strong style={{ fontSize: '1.05rem' }}>{field.name}</strong>
+                {field.address && (
+                  <span style={{ color: '#666', marginLeft: '0.75rem', fontSize: '0.9rem' }}>{field.address}</span>
+                )}
+                <span style={{ marginLeft: '1rem', color: '#888', fontSize: '0.85rem' }}>
+                  Max {field.max_games_per_day} games/day
                 </span>
-              )}
-            </div>
+                {!field.is_active && (
+                  <span style={{ marginLeft: '0.75rem', background: '#eee', padding: '1px 8px', borderRadius: 10, fontSize: '0.8rem', color: '#666' }}>
+                    Inactive
+                  </span>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {editingFieldId !== field.id && (
+                <button onClick={() => startEditField(field)} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Edit</button>
+              )}
               <button onClick={() => toggleExpand(field.id)} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
                 {expanded === field.id ? 'Collapse' : 'Manage Availability'}
               </button>

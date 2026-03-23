@@ -14,6 +14,9 @@ export default function TeamsPage() {
     name: string; shortCode: string; teamType: string; gamesRequired: number
   }>>({})
 
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
+  const [editTeamForm, setEditTeamForm] = useState({ name: '', shortCode: '', teamType: 'local', gamesRequired: 20, divisionId: '', homeFieldId: undefined as string | undefined })
+
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
@@ -96,6 +99,35 @@ export default function TeamsPage() {
     }
   }
 
+  function startEditTeam(team: Team) {
+    setEditingTeamId(team.id)
+    setEditTeamForm({
+      name: team.name,
+      shortCode: team.short_code,
+      teamType: team.team_type,
+      gamesRequired: team.games_required,
+      divisionId: team.division_id,
+      homeFieldId: team.home_field_id,
+    })
+  }
+
+  async function saveTeam(id: string) {
+    try {
+      await teamsApiClient.update(id, {
+        division_id: editTeamForm.divisionId,
+        name: editTeamForm.name,
+        short_code: editTeamForm.shortCode,
+        team_type: editTeamForm.teamType as 'local' | 'interleague',
+        home_field_id: editTeamForm.homeFieldId,
+        games_required: editTeamForm.gamesRequired,
+      })
+      setEditingTeamId(null)
+      await loadData()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   const inputStyle: React.CSSProperties = {
     padding: '0.4rem',
     borderRadius: 4,
@@ -171,31 +203,50 @@ export default function TeamsPage() {
                 </tr>
               ) : (
                 (teams[div.id] || []).map(team => (
-                  <tr key={team.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.4rem' }}>{team.name}</td>
-                    <td style={{ padding: '0.4rem' }}><code>{team.short_code}</code></td>
-                    <td style={{ padding: '0.4rem' }}>
-                      <span style={{
-                        background: team.team_type === 'interleague' ? '#e8f4f8' : '#f0f8e8',
-                        color: team.team_type === 'interleague' ? '#1a5276' : '#1a6b1a',
-                        padding: '2px 8px',
-                        borderRadius: 12,
-                        fontSize: '0.85rem',
-                      }}>
-                        {team.team_type}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.4rem' }}>{team.games_required}</td>
-                    <td style={{ padding: '0.4rem' }}>
-                      <button
-                        onClick={() => deleteTeam(team.id)}
-                        className="btn btn-danger"
-                        style={{ fontSize: '0.8rem', padding: '2px 10px' }}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
+                  editingTeamId === team.id ? (
+                    <tr key={team.id} style={{ borderBottom: '1px solid #eee', background: '#f9f9f9' }}>
+                      <td style={{ padding: '0.4rem' }}>
+                        <input value={editTeamForm.name} onChange={e => setEditTeamForm(p => ({ ...p, name: e.target.value }))} style={inputStyle} />
+                      </td>
+                      <td style={{ padding: '0.4rem' }}>
+                        <input value={editTeamForm.shortCode} onChange={e => setEditTeamForm(p => ({ ...p, shortCode: e.target.value }))} style={{ ...inputStyle, width: 60 }} />
+                      </td>
+                      <td style={{ padding: '0.4rem' }}>
+                        <select value={editTeamForm.teamType} onChange={e => setEditTeamForm(p => ({ ...p, teamType: e.target.value }))} style={inputStyle}>
+                          <option value="local">Local</option>
+                          <option value="interleague">Interleague</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '0.4rem' }}>
+                        <input type="number" value={editTeamForm.gamesRequired} min={1} onChange={e => setEditTeamForm(p => ({ ...p, gamesRequired: Number(e.target.value) }))} style={{ ...inputStyle, width: 60 }} />
+                      </td>
+                      <td style={{ padding: '0.4rem', display: 'flex', gap: '0.25rem' }}>
+                        <button onClick={() => saveTeam(team.id)} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Save</button>
+                        <button onClick={() => setEditingTeamId(null)} className="btn" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Cancel</button>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={team.id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '0.4rem' }}>{team.name}</td>
+                      <td style={{ padding: '0.4rem' }}><code>{team.short_code}</code></td>
+                      <td style={{ padding: '0.4rem' }}>
+                        <span style={{
+                          background: team.team_type === 'interleague' ? '#e8f4f8' : '#f0f8e8',
+                          color: team.team_type === 'interleague' ? '#1a5276' : '#1a6b1a',
+                          padding: '2px 8px',
+                          borderRadius: 12,
+                          fontSize: '0.85rem',
+                        }}>
+                          {team.team_type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.4rem' }}>{team.games_required}</td>
+                      <td style={{ padding: '0.4rem', display: 'flex', gap: '0.25rem' }}>
+                        <button onClick={() => startEditTeam(team)} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Edit</button>
+                        <button onClick={() => deleteTeam(team.id)} className="btn btn-danger" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Delete</button>
+                      </td>
+                    </tr>
+                  )
                 ))
               )}
             </tbody>

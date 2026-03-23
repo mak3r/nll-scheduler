@@ -1,0 +1,98 @@
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── Go ───────────────────────────────────────────────────────────────────────
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Dependency vendor dirs (we use Go modules)
+vendor/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# ── Node / React / Vite ──────────────────────────────────────────────────────
+node_modules/
+dist/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+# Don't ignore Dockerfiles — they're checked in
+# Ignore any local override compose files if added later
+docker-compose.override.yml
+
+# ── Kubernetes / Tilt ────────────────────────────────────────────────────────
+# Local kubeconfig overrides
+*.kubeconfig
+kubeconfig
+
+# Tilt state
+.tilt_workspace/
+.tiltignore.local
+
+# ── IDE / editors ────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ── Secrets / credentials ────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.yaml
+secrets.yml
+*-secret-local.yaml

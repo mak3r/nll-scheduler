@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-engine
+  namespace: nll-scheduler-dev
+  labels:
+    app: scheduler-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler-engine
+  template:
+    metadata:
+      labels:
+        app: scheduler-engine
+    spec:
+      containers:
+      - name: scheduler-engine
+        image: nll-scheduler/scheduler-engine:dev
+        ports:
+        - containerPort: 8080
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "2Gi"

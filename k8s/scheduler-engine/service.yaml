@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler-engine
+  namespace: nll-scheduler-dev
+  labels:
+    app: scheduler-engine
+spec:
+  selector:
+    app: scheduler-engine
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  type: ClusterIP

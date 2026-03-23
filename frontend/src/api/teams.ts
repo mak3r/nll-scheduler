@@ -1,0 +1,49 @@
+import { teamsApi } from './client'
+
+export interface Division {
+  id: string
+  name: string
+  season_year: number
+  created_at: string
+}
+
+export interface Team {
+  id: string
+  division_id: string
+  name: string
+  short_code: string
+  team_type: 'local' | 'interleague'
+  home_field_id?: string
+  games_required: number
+}
+
+export interface MatchupRule {
+  id: string
+  team_a_id: string
+  team_b_id: string
+  min_games: number
+  max_games: number
+}
+
+export const divisionsApi = {
+  list: () => teamsApi<Division[]>('/divisions'),
+  create: (data: Omit<Division, 'id' | 'created_at'>) =>
+    teamsApi<Division>('/divisions', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<Omit<Division, 'id' | 'created_at'>>) =>
+    teamsApi<Division>(`/divisions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => teamsApi<void>(`/divisions/${id}`, { method: 'DELETE' }),
+  getTeamsWithRules: (id: string) =>
+    teamsApi<{ teams: Team[]; matchup_rules: MatchupRule[] }>(`/divisions/${id}/teams-with-rules`),
+}
+
+export const teamsApiClient = {
+  list: (params?: { division_id?: string }) => {
+    const qs = params?.division_id ? `?division_id=${params.division_id}` : ''
+    return teamsApi<Team[]>(`/teams${qs}`)
+  },
+  create: (data: Omit<Team, 'id'>) =>
+    teamsApi<Team>('/teams', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<Omit<Team, 'id'>>) =>
+    teamsApi<Team>(`/teams/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => teamsApi<void>(`/teams/${id}`, { method: 'DELETE' }),
+}

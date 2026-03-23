@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS matchup_rules;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS divisions;

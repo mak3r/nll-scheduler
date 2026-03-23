@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: schedule-service-config
+  namespace: nll-scheduler-dev
+data:
+  PORT: "8080"
+  POSTGRES_DB: "schedule_db"
+  POSTGRES_USER: "schedule_user"
+  TEAM_SERVICE_URL: "http://team-service:8080"
+  FIELD_SERVICE_URL: "http://field-service:8080"

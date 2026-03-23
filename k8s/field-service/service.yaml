@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: field-service
+  namespace: nll-scheduler-dev
+  labels:
+    app: field-service
+spec:
+  selector:
+    app: field-service
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  type: ClusterIP

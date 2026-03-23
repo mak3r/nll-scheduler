@@ -8,7 +8,8 @@ Get the full NLL Scheduler stack running locally in under 10 minutes.
 |---|---|---|
 | Kubernetes cluster | Any local cluster `kubectl` can reach | [Rancher Desktop](https://rancherdesktop.io/), [k3s](https://k3s.io/), [kind](https://kind.sigs.k8s.io/), or [k3d](https://k3d.io/) |
 | `kubectl` | Kubernetes CLI | Bundled with Rancher Desktop, or `brew install kubectl` |
-| Container runtime | Builds and pushes images | [Colima](https://github.com/abiosoft/colima) (recommended), or Rancher Desktop's built-in runtime |
+| [Podman](https://podman.io/) | Container runtime — builds and pushes images | `brew install podman` |
+| `vfkit` | macOS Virtualization Framework driver for Podman | `brew install vfkit` |
 | [Tilt](https://docs.tilt.dev/install.html) | Dev orchestration (builds, deploys, port-forwards, live reload) | `brew install tilt-dev/tap/tilt` |
 | [GitHub CLI](https://cli.github.com/) | Authenticates with ghcr.io | `brew install gh` |
 
@@ -23,15 +24,18 @@ tilt version                     # should print a version number
 
 ## Container runtime setup
 
-If using **Colima** (recommended on macOS without Rancher Desktop):
+**One-time Podman machine initialization** (downloads a Fedora CoreOS VM, ~700 MB):
 
 ```bash
-brew install colima
-colima start
-export DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock
+podman machine init
+podman machine start
 ```
 
-Add the `export` to `~/.zshrc` to avoid setting it each session.
+**Set `DOCKER_HOST`** so Tilt finds the Podman socket. Add this to `~/.zshrc`:
+
+```bash
+export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+```
 
 ### Authenticate with ghcr.io
 

@@ -10,7 +10,7 @@ Get the full NLL Scheduler stack running locally in under 10 minutes.
 | `kubectl` | Kubernetes CLI | Bundled with Rancher Desktop |
 | [Tilt](https://docs.tilt.dev/install.html) | Dev orchestration (builds, deploys, port-forwards, live reload) | `brew install tilt-dev/tap/tilt` |
 
-> **Alternatives to Rancher Desktop:** [kind](https://kind.sigs.k8s.io/) or [k3d](https://k3d.io/) also work — any cluster that `kubectl` can reach will do.
+> **Alternatives to Rancher Desktop:** [kind](https://kind.sigs.k8s.io/) or [k3d](https://k3d.io/) also work — any cluster that `kubectl` can reach will do. If you prefer Podman over Rancher Desktop, see [Using Podman](#using-podman) below.
 
 ### Verify your setup
 
@@ -91,6 +91,34 @@ Open [http://localhost:3000](http://localhost:3000) and follow these steps:
 - Use **Check Conflicts** to detect any field double-bookings
 - Edit individual games if needed (date, time, field, status)
 - Use **Export** to download the schedule as JSON
+
+## Using Podman
+
+If you use [Podman](https://podman.io/) (e.g. installed via Homebrew) instead of Rancher Desktop, Tilt needs to be pointed at Podman's Docker-compatible socket.
+
+**One-time setup:**
+
+```bash
+podman machine init   # downloads Fedora CoreOS VM (~700 MB), first run only
+podman machine start
+```
+
+**Before each `tilt up` session**, export `DOCKER_HOST` so Tilt finds the socket:
+
+```bash
+export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+tilt up
+```
+
+To avoid setting this every session, add the export to your shell profile (`~/.zshrc`):
+
+```bash
+export DOCKER_HOST="unix://${HOME}/.local/share/containers/podman/machine/podman-machine-default/podman.sock"
+```
+
+> The exact socket path may differ — use `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'` to confirm.
+
+No changes to the Tiltfile are required.
 
 ## Tear down
 

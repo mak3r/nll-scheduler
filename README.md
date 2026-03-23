@@ -37,7 +37,7 @@ An nginx ingress routes `/api/teams/`, `/api/fields/`, and `/api/schedule/` to t
 
 ## Local development
 
-**Prerequisites:** [Rancher Desktop](https://rancherdesktop.io/) (or kind/k3d), `kubectl`, and [Tilt](https://docs.tilt.dev/install.html).
+**Prerequisites:** [Rancher Desktop](https://rancherdesktop.io/) (or Podman, kind, k3d), `kubectl`, and [Tilt](https://docs.tilt.dev/install.html).
 
 ```bash
 git clone https://github.com/mak3r/nll-scheduler.git

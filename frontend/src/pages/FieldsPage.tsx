@@ -251,7 +251,11 @@ export default function FieldsPage() {
             />
           </label>
           <label>
-            Max Games/Day<br />
+            Max Games/Day{' '}
+            <span
+              title="This is a cap on total games per day — it does not create slots. To allow 2 games on the same day, add 2 availability windows with different start times (e.g. 10:00 and 14:00)."
+              style={{ cursor: 'help', color: '#888', fontSize: '0.85rem' }}
+            >ⓘ</span><br />
             <input
               type="number"
               value={newField.maxGamesPerDay}
@@ -284,7 +288,11 @@ export default function FieldsPage() {
                   <input value={editFieldForm.address} onChange={e => setEditFieldForm(p => ({ ...p, address: e.target.value }))} placeholder="optional" style={{ ...inputStyle, minWidth: 160 }} />
                 </label>
                 <label style={{ fontSize: '0.9rem' }}>
-                  Max Games/Day<br />
+                  Max Games/Day{' '}
+                  <span
+                    title="This is a cap on total games per day — it does not create slots. To allow 2 games on the same day, add 2 availability windows with different start times (e.g. 10:00 and 14:00)."
+                    style={{ cursor: 'help', color: '#888', fontSize: '0.85rem' }}
+                  >ⓘ</span><br />
                   <input type="number" value={editFieldForm.maxGamesPerDay} min={1} onChange={e => setEditFieldForm(p => ({ ...p, maxGamesPerDay: Number(e.target.value) }))} style={{ ...inputStyle, width: 80 }} />
                 </label>
                 <div style={{ display: 'flex', gap: '0.25rem', alignSelf: 'flex-end' }}>
@@ -325,6 +333,11 @@ export default function FieldsPage() {
             <div style={{ marginTop: '1rem', borderTop: '1px solid #eee', paddingTop: '1rem' }}>
               {/* Availability Windows */}
               <h3 style={sectionHeadingStyle}>Availability Windows</h3>
+              <p style={{ fontSize: '0.83rem', color: '#555', background: '#f0f4f8', padding: '0.5rem 0.75rem', borderRadius: 4, margin: '0 0 0.75rem' }}>
+                Each window defines <strong>one game slot</strong>. To allow multiple games on the same day,
+                add multiple windows with different start times — e.g. one at 10:00 and another at 14:00 to
+                allow two games. <em>Max Games/Day</em> is a safety cap, not a slot multiplier.
+              </p>
 
               {(windows[field.id] || []).length === 0 && (
                 <p style={{ color: '#888', fontSize: '0.9rem', fontStyle: 'italic' }}>No availability windows set.</p>

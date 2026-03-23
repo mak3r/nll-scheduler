@@ -1,7 +1,10 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { seasonsApi, gamesApi, type Season, type Game } from '../api/schedule'
-import { teamsApiClient, type Team } from '../api/teams'
+import {
+  seasonsApi, gamesApi,
+  type Season, type Game, type GamesSummaryResponse,
+} from '../api/schedule'
+import { teamsApiClient, divisionsApi, type Team, type Division } from '../api/teams'
 import { fieldsApiClient, type Field } from '../api/fields'
 
 interface EditForm {
@@ -19,6 +22,7 @@ export default function SchedulePage() {
   const [games, setGames] = useState<Game[]>([])
   const [teams, setTeams] = useState<Record<string, Team>>({})
   const [fields, setFields] = useState<Record<string, Field>>({})
+  const [divisions, setDivisions] = useState<Record<string, Division>>({})
 
   const [loading, setLoading] = useState(true)
   const [gamesLoading, setGamesLoading] = useState(false)
@@ -29,6 +33,9 @@ export default function SchedulePage() {
 
   const [conflicts, setConflicts] = useState<string[] | null>(null)
   const [conflictsLoading, setConflictsLoading] = useState(false)
+
+  const [summary, setSummary] = useState<GamesSummaryResponse | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
 
   useEffect(() => {
     loadInitial()
@@ -42,16 +49,18 @@ export default function SchedulePage() {
       setGames([])
     }
     setConflicts(null)
+    setSummary(null)
     setEditingGameId(null)
   }, [selectedSeasonId])
 
   async function loadInitial() {
     setLoading(true)
     try {
-      const [s, t, f] = await Promise.all([
+      const [s, t, f, d] = await Promise.all([
         seasonsApi.list(),
         teamsApiClient.list(),
         fieldsApiClient.list(),
+        divisionsApi.list(),
       ])
       setSeasons(s)
 
@@ -63,12 +72,13 @@ export default function SchedulePage() {
       for (const field of f) fieldsMap[field.id] = field
       setFields(fieldsMap)
 
-      // Auto-select from URL param if present
+      const divisionsMap: Record<string, Division> = {}
+      for (const div of d) divisionsMap[div.id] = div
+      setDivisions(divisionsMap)
+
       const urlSeason = searchParams.get('season')
       if (urlSeason && s.some(season => season.id === urlSeason)) {
         setSelectedSeasonId(urlSeason)
-      } else if (s.length > 0 && !selectedSeasonId) {
-        // Don't auto-select; let user choose
       }
     } catch (e) {
       setError(String(e))
@@ -146,6 +156,20 @@ export default function SchedulePage() {
     }
   }
 
+  async function showSummary() {
+    if (!selectedSeasonId) return
+    setSummaryLoading(true)
+    setSummary(null)
+    try {
+      const result = await gamesApi.summary(selectedSeasonId)
+      setSummary(result)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
   async function exportJSON() {
     if (!selectedSeasonId) return
     try {
@@ -162,6 +186,34 @@ export default function SchedulePage() {
     } catch (e) {
       setError(String(e))
     }
+  }
+
+  function exportCSV() {
+    if (!selectedSeasonId) return
+    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const headers = ['Date', 'Day', 'Start Time', 'Field', 'Division', 'Home Team', 'Away Team', 'Status']
+    const rows = games.map(g => {
+      const d = new Date(g.game_date + 'T00:00:00')
+      return [
+        g.game_date,
+        DAYS[d.getDay()],
+        g.start_time,
+        fields[g.field_id]?.name ?? g.field_id,
+        divisions[g.division_id]?.name ?? g.division_id,
+        teams[g.home_team_id]?.name ?? g.home_team_id,
+        teams[g.away_team_id]?.name ?? g.away_team_id,
+        g.status,
+      ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')
+    })
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const season = seasons.find(s => s.id === selectedSeasonId)
+    a.href = url
+    a.download = `schedule-${season?.name ?? selectedSeasonId}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // Group games by date
@@ -214,8 +266,14 @@ export default function SchedulePage() {
               <button onClick={checkConflicts} className="btn btn-primary" disabled={conflictsLoading} style={{ fontSize: '0.85rem' }}>
                 {conflictsLoading ? 'Checking…' : 'Check Conflicts'}
               </button>
+              <button onClick={showSummary} className="btn btn-primary" disabled={summaryLoading} style={{ fontSize: '0.85rem' }}>
+                {summaryLoading ? 'Loading…' : 'Show Summary'}
+              </button>
               <button onClick={exportJSON} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
                 Export JSON
+              </button>
+              <button onClick={exportCSV} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
+                Export CSV
               </button>
             </>
           )}
@@ -243,6 +301,38 @@ export default function SchedulePage() {
               </ul>
             </>
           )}
+        </div>
+      )}
+
+      {/* Summary panel */}
+      {summary !== null && (
+        <div className="card">
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: '#1a5276' }}>Home / Away Summary</h3>
+          {summary.divisions.map(div => (
+            <div key={div.division_id} style={{ marginBottom: '1rem' }}>
+              <strong style={{ fontSize: '0.9rem' }}>{divisions[div.division_id]?.name ?? div.division_id}</strong>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginTop: '0.35rem' }}>
+                <thead>
+                  <tr style={{ background: '#f0f4f8', textAlign: 'left' }}>
+                    <th style={tdStyle}>Team</th>
+                    <th style={{ ...tdStyle, textAlign: 'center' }}>Home</th>
+                    <th style={{ ...tdStyle, textAlign: 'center' }}>Away</th>
+                    <th style={{ ...tdStyle, textAlign: 'center' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...div.teams].sort((a, b) => b.total - a.total).map(t => (
+                    <tr key={t.team_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={tdStyle}>{teams[t.team_id]?.name ?? t.team_id}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{t.home}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{t.away}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{t.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       )}
 
@@ -276,6 +366,7 @@ export default function SchedulePage() {
             <thead>
               <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', color: '#555' }}>
                 <th style={tdStyle}>Time</th>
+                <th style={tdStyle}>Division</th>
                 <th style={tdStyle}>Home</th>
                 <th style={tdStyle}>Away</th>
                 <th style={tdStyle}>Field</th>
@@ -289,6 +380,9 @@ export default function SchedulePage() {
                 <Fragment key={game.id}>
                   <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
                     <td style={tdStyle}>{game.start_time}</td>
+                    <td style={{ ...tdStyle, color: '#555', fontSize: '0.83rem' }}>
+                      {divisions[game.division_id]?.name ?? game.division_id ?? '—'}
+                    </td>
                     <td style={tdStyle}>{teams[game.home_team_id]?.name || game.home_team_id}</td>
                     <td style={tdStyle}>{teams[game.away_team_id]?.name || game.away_team_id}</td>
                     <td style={tdStyle}>{fields[game.field_id]?.name || game.field_id}</td>
@@ -340,7 +434,7 @@ export default function SchedulePage() {
 
                   {editingGameId === game.id && (
                     <tr style={{ background: '#f0f4f8' }}>
-                      <td colSpan={7} style={{ padding: '0.75rem 0.5rem' }}>
+                      <td colSpan={8} style={{ padding: '0.75rem 0.5rem' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                           <label style={{ fontSize: '0.85rem' }}>
                             Date<br />

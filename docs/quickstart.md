@@ -38,8 +38,9 @@ podman machine start
 Tilt pushes images to `ghcr.io/mak3r/nll-scheduler` — authenticate once before running `tilt up`:
 
 ```bash
-gh auth login                    # if not already logged in to GitHub CLI
-echo $(gh auth token) | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+gh auth login                                          # if not already logged in to GitHub CLI
+gh auth refresh --scopes write:packages               # ensure the token has package write access
+echo $(gh auth token) | podman login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
 
 ## Start the stack

@@ -63,6 +63,107 @@ func (r *AvailabilityRepo) ListWindows(ctx context.Context, fieldID string) ([]m
 	return windows, nil
 }
 
+func (r *AvailabilityRepo) ListAllWindows(ctx context.Context) ([]model.AvailabilityWindow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, field_id, window_type, days_of_week,
+		        start_date::text, end_date::text, start_time::text, end_time::text, created_at
+		 FROM availability_windows
+		 ORDER BY field_id, start_date`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var windows []model.AvailabilityWindow
+	for rows.Next() {
+		var w model.AvailabilityWindow
+		var daysOfWeek []int32
+		if err := rows.Scan(
+			&w.ID, &w.FieldID, &w.WindowType, &daysOfWeek,
+			&w.StartDate, &w.EndDate, &w.StartTime, &w.EndTime, &w.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		w.DaysOfWeek = make([]int, len(daysOfWeek))
+		for i, d := range daysOfWeek {
+			w.DaysOfWeek[i] = int(d)
+		}
+		windows = append(windows, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if windows == nil {
+		windows = []model.AvailabilityWindow{}
+	}
+	return windows, nil
+}
+
+func (r *AvailabilityRepo) UpsertWindow(ctx context.Context, w model.AvailabilityWindow) error {
+	daysOfWeek := make([]int32, len(w.DaysOfWeek))
+	for i, d := range w.DaysOfWeek {
+		daysOfWeek[i] = int32(d)
+	}
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO availability_windows
+		   (id, field_id, window_type, days_of_week, start_date, end_date, start_time, end_time, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 ON CONFLICT (id) DO UPDATE
+		   SET field_id     = EXCLUDED.field_id,
+		       window_type  = EXCLUDED.window_type,
+		       days_of_week = EXCLUDED.days_of_week,
+		       start_date   = EXCLUDED.start_date,
+		       end_date     = EXCLUDED.end_date,
+		       start_time   = EXCLUDED.start_time,
+		       end_time     = EXCLUDED.end_time`,
+		w.ID, w.FieldID, w.WindowType, daysOfWeek,
+		w.StartDate, w.EndDate, w.StartTime, w.EndTime, w.CreatedAt,
+	)
+	return err
+}
+
+func (r *AvailabilityRepo) ListAllBlackouts(ctx context.Context) ([]model.BlackoutDate, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, field_id, blackout_date::text, reason, created_at
+		 FROM blackout_dates
+		 ORDER BY field_id, blackout_date`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var blackouts []model.BlackoutDate
+	for rows.Next() {
+		var b model.BlackoutDate
+		if err := rows.Scan(&b.ID, &b.FieldID, &b.BlackoutDate, &b.Reason, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		blackouts = append(blackouts, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if blackouts == nil {
+		blackouts = []model.BlackoutDate{}
+	}
+	return blackouts, nil
+}
+
+func (r *AvailabilityRepo) UpsertBlackout(ctx context.Context, b model.BlackoutDate) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO blackout_dates (id, field_id, blackout_date, reason, created_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (id) DO UPDATE
+		   SET field_id      = EXCLUDED.field_id,
+		       blackout_date = EXCLUDED.blackout_date,
+		       reason        = EXCLUDED.reason`,
+		b.ID, b.FieldID, b.BlackoutDate, b.Reason, b.CreatedAt,
+	)
+	return err
+}
+
 func (r *AvailabilityRepo) CreateWindow(ctx context.Context, w model.AvailabilityWindow) (*model.AvailabilityWindow, error) {
 	daysOfWeek := make([]int32, len(w.DaysOfWeek))
 	for i, d := range w.DaysOfWeek {

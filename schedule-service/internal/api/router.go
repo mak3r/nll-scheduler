@@ -35,6 +35,8 @@ func NewRouter(pool *pgxpool.Pool, teamServiceURL, fieldServiceURL, schedulerEng
 	r.Use(middleware.RequestID)
 
 	r.Get("/health", h.Health)
+	r.Get("/export", h.ExportAll)
+	r.Post("/import", h.ImportAll)
 
 	r.Route("/seasons", func(r chi.Router) {
 		r.Get("/", h.ListSeasons)
@@ -461,6 +463,141 @@ func (h *Handler) ExportSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"format": "json", "games": games})
+}
+
+// seasonWithExtras is the transport type for full export/import of a season with all sub-resources.
+type seasonWithExtras struct {
+	model.Season
+	BlackoutDates  []model.SeasonBlackout   `json:"blackout_dates"`
+	PreferredDates []model.PreferredDate    `json:"preferred_interleague_dates"`
+	Constraints    []model.SeasonConstraint `json:"constraints"`
+	Games          []model.Game             `json:"games"`
+}
+
+// Export/Import handlers
+
+func (h *Handler) ExportAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	seasons, err := h.seasons.List(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	allBlackouts, err := h.extras.ListAllBlackouts(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	allPreferred, err := h.extras.ListAllPreferredDates(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	allConstraints, err := h.extras.ListAllConstraints(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	allGames, err := h.games.ListAll(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Group sub-resources by season_id.
+	blackoutsBySeasonID := make(map[string][]model.SeasonBlackout)
+	for _, b := range allBlackouts {
+		blackoutsBySeasonID[b.SeasonID] = append(blackoutsBySeasonID[b.SeasonID], b)
+	}
+	preferredBySeasonID := make(map[string][]model.PreferredDate)
+	for _, d := range allPreferred {
+		preferredBySeasonID[d.SeasonID] = append(preferredBySeasonID[d.SeasonID], d)
+	}
+	constraintsBySeasonID := make(map[string][]model.SeasonConstraint)
+	for _, c := range allConstraints {
+		constraintsBySeasonID[c.SeasonID] = append(constraintsBySeasonID[c.SeasonID], c)
+	}
+	gamesBySeasonID := make(map[string][]model.Game)
+	for _, g := range allGames {
+		gamesBySeasonID[g.SeasonID] = append(gamesBySeasonID[g.SeasonID], g)
+	}
+
+	result := make([]seasonWithExtras, len(seasons))
+	for i, s := range seasons {
+		blackouts := blackoutsBySeasonID[s.ID]
+		if blackouts == nil {
+			blackouts = []model.SeasonBlackout{}
+		}
+		preferred := preferredBySeasonID[s.ID]
+		if preferred == nil {
+			preferred = []model.PreferredDate{}
+		}
+		constraints := constraintsBySeasonID[s.ID]
+		if constraints == nil {
+			constraints = []model.SeasonConstraint{}
+		}
+		games := gamesBySeasonID[s.ID]
+		if games == nil {
+			games = []model.Game{}
+		}
+		result[i] = seasonWithExtras{
+			Season:         s,
+			BlackoutDates:  blackouts,
+			PreferredDates: preferred,
+			Constraints:    constraints,
+			Games:          games,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"seasons": result})
+}
+
+func (h *Handler) ImportAll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Seasons []seasonWithExtras `json:"seasons"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	ctx := r.Context()
+	totalGames := 0
+	for _, s := range req.Seasons {
+		if err := h.seasons.Upsert(ctx, s.Season); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, b := range s.BlackoutDates {
+			if err := h.extras.UpsertBlackout(ctx, b); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		for _, d := range s.PreferredDates {
+			if err := h.extras.UpsertPreferredDate(ctx, d); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		for _, c := range s.Constraints {
+			if err := h.extras.UpsertConstraint(ctx, c); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		for _, g := range s.Games {
+			if err := h.games.Upsert(ctx, g); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		totalGames += len(s.Games)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"imported_seasons": len(req.Seasons),
+		"imported_games":   totalGames,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

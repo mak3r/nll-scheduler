@@ -30,6 +30,8 @@ func NewRouter(pool *pgxpool.Pool) *chi.Mux {
 	r.Use(middleware.RequestID)
 
 	r.Get("/health", h.Health)
+	r.Get("/export", h.ExportAll)
+	r.Post("/import", h.ImportAll)
 
 	r.Route("/divisions", func(r chi.Router) {
 		r.Get("/", h.ListDivisions)
@@ -280,6 +282,68 @@ func (h *Handler) DeleteMatchupRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Export/Import handlers
+
+func (h *Handler) ExportAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	divisions, err := h.divisions.List(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	teams, err := h.teams.List(ctx, "")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	rules, err := h.matchupRules.ListAll(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"divisions":     divisions,
+		"teams":         teams,
+		"matchup_rules": rules,
+	})
+}
+
+func (h *Handler) ImportAll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Divisions    []model.Division    `json:"divisions"`
+		Teams        []model.Team        `json:"teams"`
+		MatchupRules []model.MatchupRule `json:"matchup_rules"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	ctx := r.Context()
+	for _, d := range req.Divisions {
+		if err := h.divisions.Upsert(ctx, d); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	for _, t := range req.Teams {
+		if err := h.teams.Upsert(ctx, t); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	for _, mr := range req.MatchupRules {
+		if err := h.matchupRules.Upsert(ctx, mr); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"imported_divisions":     len(req.Divisions),
+		"imported_teams":         len(req.Teams),
+		"imported_matchup_rules": len(req.MatchupRules),
+	})
 }
 
 // Helpers

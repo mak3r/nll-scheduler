@@ -3,6 +3,7 @@ import TeamsPage from './pages/TeamsPage'
 import FieldsPage from './pages/FieldsPage'
 import SeasonsPage from './pages/SeasonsPage'
 import SchedulePage from './pages/SchedulePage'
+import AdminPage from './pages/AdminPage'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <NavLink to="/fields">Fields</NavLink>
         <NavLink to="/seasons">Seasons</NavLink>
         <NavLink to="/schedule">Schedule</NavLink>
+        <NavLink to="/admin">Admin</NavLink>
       </nav>
       <main>
         <Routes>
@@ -20,6 +22,7 @@ export default function App() {
           <Route path="/fields" element={<FieldsPage />} />
           <Route path="/seasons" element={<SeasonsPage />} />
           <Route path="/schedule" element={<SchedulePage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </main>
     </BrowserRouter>

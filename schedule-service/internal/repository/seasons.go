@@ -101,6 +101,23 @@ func (r *SeasonRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *SeasonRepo) Upsert(ctx context.Context, s model.Season) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO seasons (id, name, division_id, start_date, end_date, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 ON CONFLICT (id) DO UPDATE
+		   SET name        = EXCLUDED.name,
+		       division_id = EXCLUDED.division_id,
+		       start_date  = EXCLUDED.start_date,
+		       end_date    = EXCLUDED.end_date,
+		       status      = EXCLUDED.status,
+		       updated_at  = EXCLUDED.updated_at`,
+		s.ID, s.Name, s.DivisionID, s.StartDate, s.EndDate,
+		s.Status, s.CreatedAt, s.UpdatedAt,
+	)
+	return err
+}
+
 func (r *SeasonRepo) UpdateStatus(ctx context.Context, id, status string) error {
 	_, err := r.db.Exec(ctx,
 		`UPDATE seasons SET status=$1, updated_at=NOW() WHERE id=$2`,

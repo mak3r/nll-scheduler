@@ -31,6 +31,8 @@ func NewRouter(pool *pgxpool.Pool) *chi.Mux {
 	r.Use(middleware.RequestID)
 
 	r.Get("/health", h.Health)
+	r.Get("/export", h.ExportAll)
+	r.Post("/import", h.ImportAll)
 
 	// Bulk availability endpoint (must be before /{fieldID} to avoid route conflict)
 	r.Get("/fields/available-dates-bulk", h.GetAvailableDatesBulk)
@@ -264,6 +266,68 @@ func (h *Handler) DeleteBlackoutDate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Export/Import handlers
+
+func (h *Handler) ExportAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	fields, err := h.fields.List(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	windows, err := h.availability.ListAllWindows(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	blackouts, err := h.availability.ListAllBlackouts(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"fields":               fields,
+		"availability_windows": windows,
+		"blackout_dates":       blackouts,
+	})
+}
+
+func (h *Handler) ImportAll(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Fields              []model.Field              `json:"fields"`
+		AvailabilityWindows []model.AvailabilityWindow `json:"availability_windows"`
+		BlackoutDates       []model.BlackoutDate       `json:"blackout_dates"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	ctx := r.Context()
+	for _, f := range req.Fields {
+		if err := h.fields.Upsert(ctx, f); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	for _, win := range req.AvailabilityWindows {
+		if err := h.availability.UpsertWindow(ctx, win); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	for _, b := range req.BlackoutDates {
+		if err := h.availability.UpsertBlackout(ctx, b); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"imported_fields":               len(req.Fields),
+		"imported_availability_windows": len(req.AvailabilityWindows),
+		"imported_blackout_dates":       len(req.BlackoutDates),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

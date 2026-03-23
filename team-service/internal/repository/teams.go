@@ -139,6 +139,24 @@ func (r *TeamRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *TeamRepo) Upsert(ctx context.Context, t model.Team) error {
+	_, err := r.db.Exec(ctx,
+		fmt.Sprintf(`INSERT INTO teams (%s)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 ON CONFLICT (id) DO UPDATE
+		   SET division_id    = EXCLUDED.division_id,
+		       name           = EXCLUDED.name,
+		       short_code     = EXCLUDED.short_code,
+		       team_type      = EXCLUDED.team_type,
+		       home_field_id  = EXCLUDED.home_field_id,
+		       games_required = EXCLUDED.games_required,
+		       updated_at     = EXCLUDED.updated_at`, teamColumns),
+		t.ID, t.DivisionID, t.Name, t.ShortCode, t.TeamType,
+		t.HomeFieldID, t.GamesRequired, t.CreatedAt, t.UpdatedAt,
+	)
+	return err
+}
+
 func (r *TeamRepo) GetTeamsWithRules(ctx context.Context, divisionID string) (*model.TeamsWithRules, error) {
 	// Fetch all teams for the division.
 	teams, err := r.List(ctx, divisionID)

@@ -92,6 +92,19 @@ func (r *DivisionRepo) Update(ctx context.Context, id string, name string, seaso
 	return &d, nil
 }
 
+func (r *DivisionRepo) Upsert(ctx context.Context, d model.Division) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO divisions (id, name, season_year, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (id) DO UPDATE
+		   SET name        = EXCLUDED.name,
+		       season_year = EXCLUDED.season_year,
+		       updated_at  = EXCLUDED.updated_at`,
+		d.ID, d.Name, d.SeasonYear, d.CreatedAt, d.UpdatedAt,
+	)
+	return err
+}
+
 func (r *DivisionRepo) Delete(ctx context.Context, id string) error {
 	result, err := r.db.Exec(ctx,
 		`DELETE FROM divisions WHERE id = $1`,

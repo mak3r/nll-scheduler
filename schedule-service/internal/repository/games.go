@@ -126,6 +126,59 @@ func (r *GamesRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *GamesRepo) ListAll(ctx context.Context) ([]model.Game, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, season_id, home_team_id, away_team_id, field_id,
+		        game_date::text, start_time::text, status, is_interleague, manually_edited,
+		        created_at, updated_at
+		 FROM games ORDER BY season_id, game_date, start_time`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var games []model.Game
+	for rows.Next() {
+		var g model.Game
+		if err := rows.Scan(
+			&g.ID, &g.SeasonID, &g.HomeTeamID, &g.AwayTeamID, &g.FieldID,
+			&g.GameDate, &g.StartTime, &g.Status, &g.IsInterleague, &g.ManuallyEdited,
+			&g.CreatedAt, &g.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		games = append(games, g)
+	}
+	if games == nil {
+		games = []model.Game{}
+	}
+	return games, rows.Err()
+}
+
+func (r *GamesRepo) Upsert(ctx context.Context, g model.Game) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO games
+		   (id, season_id, home_team_id, away_team_id, field_id,
+		    game_date, start_time, status, is_interleague, manually_edited, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		 ON CONFLICT (id) DO UPDATE
+		   SET season_id       = EXCLUDED.season_id,
+		       home_team_id    = EXCLUDED.home_team_id,
+		       away_team_id    = EXCLUDED.away_team_id,
+		       field_id        = EXCLUDED.field_id,
+		       game_date       = EXCLUDED.game_date,
+		       start_time      = EXCLUDED.start_time,
+		       status          = EXCLUDED.status,
+		       is_interleague  = EXCLUDED.is_interleague,
+		       manually_edited = EXCLUDED.manually_edited,
+		       updated_at      = EXCLUDED.updated_at`,
+		g.ID, g.SeasonID, g.HomeTeamID, g.AwayTeamID, g.FieldID,
+		g.GameDate, g.StartTime, g.Status, g.IsInterleague, g.ManuallyEdited,
+		g.CreatedAt, g.UpdatedAt,
+	)
+	return err
+}
+
 func (r *GamesRepo) BulkCreate(ctx context.Context, games []model.Game) error {
 	for _, g := range games {
 		if _, err := r.Create(ctx, g); err != nil {

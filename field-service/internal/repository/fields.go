@@ -126,6 +126,22 @@ func (r *FieldRepo) Update(ctx context.Context, id string, f model.Field) (*mode
 	return &result, nil
 }
 
+func (r *FieldRepo) Upsert(ctx context.Context, f model.Field) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO fields (id, name, address, max_games_per_day, is_active, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO UPDATE
+		   SET name              = EXCLUDED.name,
+		       address           = EXCLUDED.address,
+		       max_games_per_day = EXCLUDED.max_games_per_day,
+		       is_active         = EXCLUDED.is_active,
+		       updated_at        = EXCLUDED.updated_at`,
+		f.ID, f.Name, f.Address, f.MaxGamesPerDay, f.IsActive,
+		f.CreatedAt, f.UpdatedAt,
+	)
+	return err
+}
+
 func (r *FieldRepo) Delete(ctx context.Context, id string) error {
 	var deletedID string
 	err := r.db.QueryRow(ctx,

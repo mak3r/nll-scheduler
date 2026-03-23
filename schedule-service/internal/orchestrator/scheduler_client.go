@@ -42,7 +42,9 @@ type SolveRequest struct {
 	BlackoutDates             []string           `json:"blackout_dates"`
 	PreferredInterleagueDates []string           `json:"preferred_interleague_dates"`
 	Constraints               []SolverConstraint `json:"constraints"`
-	TimeLimitSeconds          int                `json:"time_limit_seconds"`
+	TimeLimitSeconds            int                 `json:"time_limit_seconds"`
+	DivisionFieldRestrictions   map[string][]string `json:"division_field_restrictions"`
+	DivisionPreferredFields     map[string][]string `json:"division_preferred_fields"`
 }
 
 type SolverTeam struct {

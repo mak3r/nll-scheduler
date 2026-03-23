@@ -25,6 +25,14 @@ export interface MatchupRule {
   max_games: number
 }
 
+export interface DivisionFieldRule {
+  id: string
+  division_id: string
+  field_id: string
+  rule_type: 'allowed' | 'preferred'
+  created_at: string
+}
+
 export const divisionsApi = {
   list: () => teamsApi<Division[]>('/divisions'),
   create: (data: Omit<Division, 'id' | 'created_at'>) =>
@@ -34,6 +42,15 @@ export const divisionsApi = {
   delete: (id: string) => teamsApi<void>(`/divisions/${id}`, { method: 'DELETE' }),
   getTeamsWithRules: (id: string) =>
     teamsApi<{ teams: Team[]; matchup_rules: MatchupRule[] }>(`/divisions/${id}/teams-with-rules`),
+  listFieldRules: (divisionId: string) =>
+    teamsApi<DivisionFieldRule[]>(`/divisions/${divisionId}/field-rules`),
+  createFieldRule: (divisionId: string, data: { field_id: string; rule_type: 'allowed' | 'preferred' }) =>
+    teamsApi<DivisionFieldRule>(`/divisions/${divisionId}/field-rules`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteFieldRule: (divisionId: string, ruleId: string) =>
+    teamsApi<void>(`/divisions/${divisionId}/field-rules/${ruleId}`, { method: 'DELETE' }),
 }
 
 export const teamsApiClient = {

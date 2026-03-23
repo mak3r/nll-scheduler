@@ -11,6 +11,7 @@ from app.constraints.balance import EvenHomeAwayBalanceConstraint
 from app.constraints.base import ConstraintHandler
 from app.constraints.capacity import MaxGamesPerFieldPerDayConstraint
 from app.constraints.interleague import PreferInterleagueDatesConstraint
+from app.constraints.prefer_fields import PreferFieldsConstraint
 from app.constraints.rest import MaxGamesPerTeamPerWeekConstraint, MinRestDaysBetweenGamesConstraint
 from app.constraints.roundrobin import RoundRobinMatchupConstraint
 
@@ -21,6 +22,7 @@ REGISTRY: dict[str, ConstraintHandler] = {
     "min_rest_days_between_games": MinRestDaysBetweenGamesConstraint(),
     "prefer_interleague_dates": PreferInterleagueDatesConstraint(),
     "even_home_away_balance": EvenHomeAwayBalanceConstraint(),
+    "prefer_fields": PreferFieldsConstraint(),
 }
 
 

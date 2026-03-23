@@ -35,3 +35,11 @@ type TeamsWithRules struct {
 	Teams        []Team        `json:"teams"`
 	MatchupRules []MatchupRule `json:"matchup_rules"`
 }
+
+type DivisionFieldRule struct {
+	ID         string    `json:"id"`
+	DivisionID string    `json:"division_id"`
+	FieldID    string    `json:"field_id"`
+	RuleType   string    `json:"rule_type"` // "allowed" | "preferred"
+	CreatedAt  time.Time `json:"created_at"`
+}

@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
-import { divisionsApi, teamsApiClient, type Division, type Team } from '../api/teams'
+import { divisionsApi, teamsApiClient, type Division, type Team, type DivisionFieldRule } from '../api/teams'
+import { fieldsApiClient, type Field } from '../api/fields'
 
 export default function TeamsPage() {
   const [divisions, setDivisions] = useState<Division[]>([])
   const [teams, setTeams] = useState<Record<string, Team[]>>({})
+  const [allFields, setAllFields] = useState<Field[]>([])
+  const [fieldRules, setFieldRules] = useState<Record<string, DivisionFieldRule[]>>({})
+  const [newRuleForms, setNewRuleForms] = useState<Record<string, { fieldId: string; ruleType: 'allowed' | 'preferred' }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -23,9 +27,14 @@ export default function TeamsPage() {
     setLoading(true)
     setError(null)
     try {
-      const divs = await divisionsApi.list()
+      const [divs, fields] = await Promise.all([
+        divisionsApi.list(),
+        fieldsApiClient.list(),
+      ])
       setDivisions(divs)
+      setAllFields(fields.filter(f => f.is_active))
       const teamsMap: Record<string, Team[]> = {}
+      const rulesMap: Record<string, DivisionFieldRule[]> = {}
       await Promise.all(divs.map(async (d) => {
         try {
           const result = await divisionsApi.getTeamsWithRules(d.id)
@@ -33,8 +42,14 @@ export default function TeamsPage() {
         } catch {
           teamsMap[d.id] = []
         }
+        try {
+          rulesMap[d.id] = await divisionsApi.listFieldRules(d.id)
+        } catch {
+          rulesMap[d.id] = []
+        }
       }))
       setTeams(teamsMap)
+      setFieldRules(rulesMap)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -122,6 +137,32 @@ export default function TeamsPage() {
         games_required: editTeamForm.gamesRequired,
       })
       setEditingTeamId(null)
+      await loadData()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  function getNewRuleForm(divId: string) {
+    return newRuleForms[divId] || { fieldId: '', ruleType: 'allowed' as const }
+  }
+
+  async function addFieldRule(e: React.FormEvent, divId: string) {
+    e.preventDefault()
+    const form = getNewRuleForm(divId)
+    if (!form.fieldId) return
+    try {
+      await divisionsApi.createFieldRule(divId, { field_id: form.fieldId, rule_type: form.ruleType })
+      setNewRuleForms(prev => { const n = { ...prev }; delete n[divId]; return n })
+      await loadData()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  async function removeFieldRule(divId: string, ruleId: string) {
+    try {
+      await divisionsApi.deleteFieldRule(divId, ruleId)
       await loadData()
     } catch (e) {
       setError(String(e))
@@ -299,6 +340,84 @@ export default function TeamsPage() {
             </label>
             <button type="submit" className="btn btn-primary">Add Team</button>
           </form>
+
+          {/* Field Access Rules */}
+          <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>Field Access Rules</h3>
+            {(fieldRules[div.id] || []).length === 0 ? (
+              <p style={{ color: '#888', fontStyle: 'italic', margin: '0 0 0.75rem' }}>
+                No restrictions — all active fields are available.
+              </p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.75rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #eee', textAlign: 'left' }}>
+                    <th style={{ padding: '0.3rem 0.4rem' }}>Field</th>
+                    <th style={{ padding: '0.3rem 0.4rem' }}>Rule</th>
+                    <th style={{ padding: '0.3rem 0.4rem' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(fieldRules[div.id] || []).map(rule => {
+                    const field = allFields.find(f => f.id === rule.field_id)
+                    return (
+                      <tr key={rule.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '0.3rem 0.4rem' }}>{field ? field.name : rule.field_id}</td>
+                        <td style={{ padding: '0.3rem 0.4rem' }}>
+                          <span style={{
+                            background: rule.rule_type === 'preferred' ? '#fef3cd' : '#dbeafe',
+                            color: rule.rule_type === 'preferred' ? '#92660a' : '#1e40af',
+                            padding: '2px 8px',
+                            borderRadius: 12,
+                            fontSize: '0.8rem',
+                          }}>
+                            {rule.rule_type}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.3rem 0.4rem' }}>
+                          <button
+                            onClick={() => removeFieldRule(div.id, rule.id)}
+                            className="btn btn-danger"
+                            style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+            <form onSubmit={e => addFieldRule(e, div.id)} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label>
+                Field<br />
+                <select
+                  value={getNewRuleForm(div.id).fieldId}
+                  onChange={e => setNewRuleForms(prev => ({ ...prev, [div.id]: { ...getNewRuleForm(div.id), fieldId: e.target.value } }))}
+                  required
+                  style={inputStyle}
+                >
+                  <option value="">Select field...</option>
+                  {allFields.map(f => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Rule Type<br />
+                <select
+                  value={getNewRuleForm(div.id).ruleType}
+                  onChange={e => setNewRuleForms(prev => ({ ...prev, [div.id]: { ...getNewRuleForm(div.id), ruleType: e.target.value as 'allowed' | 'preferred' } }))}
+                  style={inputStyle}
+                >
+                  <option value="allowed">allowed</option>
+                  <option value="preferred">preferred</option>
+                </select>
+              </label>
+              <button type="submit" className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Add Rule</button>
+            </form>
+          </div>
         </div>
       ))}
 

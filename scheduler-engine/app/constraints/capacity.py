@@ -42,7 +42,7 @@ class MaxGamesPerFieldPerDayConstraint(ConstraintHandler):
                 for s in slot_indices
                 for i in range(n_teams)
                 for j in range(n_teams)
-                if i != j
+                if i != j and (i, j, s) in x
             ]
             if games_at:
                 model.add(sum(games_at) <= limit)

@@ -83,31 +83,109 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 	if err != nil {
 		return fmt.Errorf("load season: %w", err)
 	}
-
-	// 2. Fetch teams + matchup rules from team-service
-	teamsWithRules, err := g.teamClient.GetTeamsWithRules(ctx, season.DivisionID)
-	if err != nil {
-		return fmt.Errorf("fetch teams: %w", err)
-	}
-	if len(teamsWithRules.Teams) < 2 {
-		return fmt.Errorf("need at least 2 teams, got %d", len(teamsWithRules.Teams))
+	if len(season.DivisionIDs) == 0 {
+		return fmt.Errorf("season has no divisions configured")
 	}
 
-	// 3. Fetch all active fields
+	// 2. Fetch division names for human-readable error messages, then
+	//    fetch teams + matchup rules from ALL divisions.
+	divisionNames := make(map[string]string) // divID → name
+	for _, divID := range season.DivisionIDs {
+		div, err := g.teamClient.GetDivision(ctx, divID)
+		if err != nil {
+			// Non-fatal: fall back to ID in messages
+			divisionNames[divID] = divID
+		} else {
+			divisionNames[divID] = div.Name
+		}
+	}
+
+	// divLabel returns "Name (id)" for error messages.
+	divLabel := func(divID string) string {
+		name, ok := divisionNames[divID]
+		if !ok || name == divID {
+			return divID
+		}
+		return fmt.Sprintf("%s (%s)", name, divID)
+	}
+
+	allTeams := make([]Team, 0)
+	allMatchupRules := make([]MatchupRule, 0)
+	divisionFieldRestrictions := make(map[string][]string) // divID → allowed field IDs (omit = all)
+	divisionPreferredFields := make(map[string][]string)   // divID → preferred field IDs
+
+	for _, divID := range season.DivisionIDs {
+		twr, err := g.teamClient.GetTeamsWithRules(ctx, divID)
+		if err != nil {
+			return fmt.Errorf("fetch teams for division %s: %w", divLabel(divID), err)
+		}
+		allTeams = append(allTeams, twr.Teams...)
+		allMatchupRules = append(allMatchupRules, twr.MatchupRules...)
+
+		fieldRules, err := g.teamClient.GetDivisionFieldRules(ctx, divID)
+		if err != nil {
+			return fmt.Errorf("fetch field rules for division %s: %w", divLabel(divID), err)
+		}
+		if len(fieldRules) > 0 {
+			allowed := make([]string, 0)
+			preferred := make([]string, 0)
+			for _, r := range fieldRules {
+				if r.RuleType == "allowed" || r.RuleType == "preferred" {
+					allowed = append(allowed, r.FieldID)
+				}
+				if r.RuleType == "preferred" {
+					preferred = append(preferred, r.FieldID)
+				}
+			}
+			divisionFieldRestrictions[divID] = allowed
+			if len(preferred) > 0 {
+				divisionPreferredFields[divID] = preferred
+			}
+		}
+		// Division with no field rules → omit from map (solver treats as "all fields")
+	}
+
+	if len(allTeams) < 2 {
+		return fmt.Errorf("need at least 2 teams across all divisions, got %d", len(allTeams))
+	}
+
+	// 3. Fetch all active fields, including only those accessible by at least one division
 	fields, err := g.fieldClient.ListFields(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch fields: %w", err)
 	}
+
 	activeFields := make([]Field, 0, len(fields))
 	fieldIDs := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.IsActive {
+		if !f.IsActive {
+			continue
+		}
+		// Include field if any division can use it
+		accessible := false
+		for _, divID := range season.DivisionIDs {
+			allowed, hasRules := divisionFieldRestrictions[divID]
+			if !hasRules {
+				accessible = true // Division with no restrictions uses all fields
+				break
+			}
+			for _, fid := range allowed {
+				if fid == f.ID {
+					accessible = true
+					break
+				}
+			}
+			if accessible {
+				break
+			}
+		}
+		if accessible {
 			activeFields = append(activeFields, f)
 			fieldIDs = append(fieldIDs, f.ID)
 		}
 	}
 	if len(fieldIDs) == 0 {
-		return fmt.Errorf("no active fields available")
+		return fmt.Errorf("no active fields available — check field access rules")
 	}
 
 	// 4. Fetch field availability for the season date range
@@ -131,8 +209,8 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 	}
 
 	// 6. Build solver request
-	solverTeams := make([]SolverTeam, len(teamsWithRules.Teams))
-	for i, t := range teamsWithRules.Teams {
+	solverTeams := make([]SolverTeam, len(allTeams))
+	for i, t := range allTeams {
 		solverTeams[i] = SolverTeam{
 			ID:            t.ID,
 			Name:          t.Name,
@@ -142,8 +220,58 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		}
 	}
 
-	solverMatchupRules := make([]SolverMatchupRule, len(teamsWithRules.MatchupRules))
-	for i, r := range teamsWithRules.MatchupRules {
+	// Build explicit matchup rules for same-division pairs not already covered.
+	// This replaces the single default_games_per_pair approach so each division
+	// can have its own games_per_pair computed from its own team count.
+	type teamPair struct{ a, b string }
+	existingPairs := make(map[teamPair]bool)
+	for _, mr := range allMatchupRules {
+		existingPairs[teamPair{mr.TeamAID, mr.TeamBID}] = true
+		existingPairs[teamPair{mr.TeamBID, mr.TeamAID}] = true
+	}
+
+	// Group teams by division for per-division computations
+	teamsByDiv := make(map[string][]Team)
+	for _, t := range allTeams {
+		teamsByDiv[t.DivisionID] = append(teamsByDiv[t.DivisionID], t)
+	}
+
+	for _, divID := range season.DivisionIDs {
+		divTeams := teamsByDiv[divID]
+		if len(divTeams) < 2 {
+			continue
+		}
+		totalRequired := 0
+		for _, t := range divTeams {
+			totalRequired += t.GamesRequired
+		}
+		avgRequired := totalRequired / len(divTeams)
+		nPairs := len(divTeams) - 1
+		gamesPerPair := (avgRequired + nPairs/2) / nPairs
+		if gamesPerPair < 1 {
+			gamesPerPair = 1
+		}
+
+		for a := 0; a < len(divTeams); a++ {
+			for b := a + 1; b < len(divTeams); b++ {
+				p := teamPair{divTeams[a].ID, divTeams[b].ID}
+				if !existingPairs[p] {
+					allMatchupRules = append(allMatchupRules, MatchupRule{
+						TeamAID:  divTeams[a].ID,
+						TeamBID:  divTeams[b].ID,
+						MinGames: gamesPerPair,
+						MaxGames: gamesPerPair,
+					})
+					existingPairs[p] = true
+					existingPairs[teamPair{p.b, p.a}] = true
+				}
+			}
+		}
+		log.Printf("division %s: %d teams, games_per_pair=%d", divLabel(divID), len(divTeams), gamesPerPair)
+	}
+
+	solverMatchupRules := make([]SolverMatchupRule, len(allMatchupRules))
+	for i, r := range allMatchupRules {
 		solverMatchupRules[i] = SolverMatchupRule{
 			TeamAID:  r.TeamAID,
 			TeamBID:  r.TeamBID,
@@ -196,117 +324,111 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		}
 	}
 
-	// Compute games_per_pair from teams' games_required and inject into
-	// round_robin_matchup unless the user has already set it explicitly.
-	// Formula: round(avg_games_required / (n_teams - 1))
-	nTeams := len(solverTeams)
-	if nTeams >= 2 {
+	// Auto-inject prefer_fields soft constraint when any division has preferred fields.
+	if len(divisionPreferredFields) > 0 {
+		hasPrefFields := false
+		for _, c := range solverConstraints {
+			if c.Type == "prefer_fields" {
+				hasPrefFields = true
+				break
+			}
+		}
+		if !hasPrefFields {
+			params, _ := json.Marshal(map[string]interface{}{
+				"division_preferred_fields": divisionPreferredFields,
+			})
+			solverConstraints = append(solverConstraints, SolverConstraint{
+				Type:   "prefer_fields",
+				Params: json.RawMessage(params),
+				IsHard: false,
+				Weight: 1.0,
+			})
+			log.Printf("auto-injected prefer_fields constraint for %d divisions", len(divisionPreferredFields))
+		}
+	}
+
+	// Pre-flight checks per division
+	blackoutSet := make(map[string]bool, len(blackoutDates))
+	for _, b := range blackoutDates {
+		blackoutSet[b] = true
+	}
+	maxGamesPerDayOverride := 0
+	for _, c := range solverConstraints {
+		if c.Type == "max_games_per_field_per_day" {
+			var p map[string]interface{}
+			if err := json.Unmarshal(c.Params, &p); err == nil {
+				if v, ok := p["max_games_per_day"]; ok {
+					switch n := v.(type) {
+					case float64:
+						maxGamesPerDayOverride = int(n)
+					case int:
+						maxGamesPerDayOverride = n
+					}
+				}
+			}
+			break
+		}
+	}
+	maxPerWeek := 2
+	for _, c := range solverConstraints {
+		if c.Type == "max_games_per_team_per_week" {
+			var p map[string]interface{}
+			if err := json.Unmarshal(c.Params, &p); err == nil {
+				if v, ok := p["max_games_per_week"]; ok {
+					switch n := v.(type) {
+					case float64:
+						maxPerWeek = int(n)
+					case int:
+						maxPerWeek = n
+					}
+				}
+			}
+			break
+		}
+	}
+	seasonStart, _ := time.Parse("2006-01-02", season.StartDate)
+	seasonEnd, _ := time.Parse("2006-01-02", season.EndDate)
+	seasonWeeks := int(math.Ceil(seasonEnd.Sub(seasonStart).Hours() / (24 * 7)))
+
+	for _, divID := range season.DivisionIDs {
+		divTeams := teamsByDiv[divID]
+		if len(divTeams) < 2 {
+			continue
+		}
 		totalRequired := 0
-		for _, t := range solverTeams {
+		for _, t := range divTeams {
 			totalRequired += t.GamesRequired
 		}
-		avgRequired := totalRequired / nTeams
-		nPairs := nTeams - 1
-		gamesPerPair := (avgRequired + nPairs/2) / nPairs // integer round
+		avgRequired := totalRequired / len(divTeams)
+		nPairs := len(divTeams) - 1
+		gamesPerPair := (avgRequired + nPairs/2) / nPairs
 		if gamesPerPair < 1 {
 			gamesPerPair = 1
 		}
 
-		// Find existing round_robin_matchup constraint
-		rrIdx := -1
-		for i, c := range solverConstraints {
-			if c.Type == "round_robin_matchup" {
-				rrIdx = i
-				break
-			}
-		}
-		if rrIdx >= 0 {
-			// Inject default_games_per_pair only if not already explicitly set
-			var p map[string]interface{}
-			if err := json.Unmarshal(solverConstraints[rrIdx].Params, &p); err != nil || p == nil {
-				p = map[string]interface{}{}
-			}
-			if _, alreadySet := p["default_games_per_pair"]; !alreadySet {
-				p["default_games_per_pair"] = gamesPerPair
-				updated, _ := json.Marshal(p)
-				solverConstraints[rrIdx].Params = json.RawMessage(updated)
-			}
-		} else {
-			// No round_robin_matchup configured; add one with computed games_per_pair
-			params, _ := json.Marshal(map[string]int{"default_games_per_pair": gamesPerPair})
-			solverConstraints = append(solverConstraints, SolverConstraint{
-				Type:   "round_robin_matchup",
-				Params: json.RawMessage(params),
-				IsHard: true,
-				Weight: 1.0,
-			})
-		}
-		log.Printf("round_robin_matchup: games_per_pair=%d (avg_required=%d, n_teams=%d)", gamesPerPair, avgRequired, nTeams)
-
-		// Pre-flight: check that max_games_per_team_per_week × season_weeks ≥ games_per_pair.
-		// This catches the most common infeasibility before handing off to the solver.
-		maxPerWeek := 2 // default (matches builder.py default)
-		for _, c := range solverConstraints {
-			if c.Type == "max_games_per_team_per_week" {
-				var p map[string]interface{}
-				if err := json.Unmarshal(c.Params, &p); err == nil {
-					if v, ok := p["max_games_per_week"]; ok {
-						switch n := v.(type) {
-						case float64:
-							maxPerWeek = int(n)
-						case int:
-							maxPerWeek = n
-						}
-					}
-				}
-				break
-			}
-		}
-		seasonStart, _ := time.Parse("2006-01-02", season.StartDate)
-		seasonEnd, _ := time.Parse("2006-01-02", season.EndDate)
-		seasonWeeks := int(math.Ceil(seasonEnd.Sub(seasonStart).Hours() / (24 * 7)))
 		maxAchievable := maxPerWeek * seasonWeeks
 		if gamesPerPair > maxAchievable {
 			return fmt.Errorf(
-				"infeasible: need %d games per team but max_games_per_team_per_week=%d over %d weeks only allows %d — "+
-					"extend the season, increase max games/week, or reduce games_required",
-				gamesPerPair, maxPerWeek, seasonWeeks, maxAchievable,
+				"infeasible for division %s: need %d games per team but max_games_per_team_per_week=%d over %d weeks only allows %d",
+				divLabel(divID), gamesPerPair, maxPerWeek, seasonWeeks, maxAchievable,
 			)
 		}
 
-		// Pre-flight: check total effective field slot capacity >= total games required.
-		// Total games = C(n_teams, 2) * games_per_pair (each game involves 2 teams).
-		totalGamesRequired := nTeams * (nTeams - 1) / 2 * gamesPerPair
-
-		// Find explicit max_games_per_day override from constraints (if any)
-		maxGamesPerDayOverride := 0
-		for _, c := range solverConstraints {
-			if c.Type == "max_games_per_field_per_day" {
-				var p map[string]interface{}
-				if err := json.Unmarshal(c.Params, &p); err == nil {
-					if v, ok := p["max_games_per_day"]; ok {
-						switch n := v.(type) {
-						case float64:
-							maxGamesPerDayOverride = int(n)
-						case int:
-							maxGamesPerDayOverride = n
-						}
-					}
-				}
-				break
+		// Determine which fields this division can use
+		divAllowed, hasRestrictions := divisionFieldRestrictions[divID]
+		divFieldSet := make(map[string]bool)
+		if hasRestrictions {
+			for _, fid := range divAllowed {
+				divFieldSet[fid] = true
 			}
 		}
 
-		// Build season blackout set
-		blackoutSet := make(map[string]bool, len(blackoutDates))
-		for _, b := range blackoutDates {
-			blackoutSet[b] = true
-		}
-
-		// Compute effective total capacity: each (field, date) contributes
-		// min(slots_on_that_date, max_games_per_day) games.
+		totalGamesRequired := len(divTeams) * (len(divTeams) - 1) / 2 * gamesPerPair
 		totalFieldCapacity := 0
 		for _, field := range activeFields {
+			if hasRestrictions && !divFieldSet[field.ID] {
+				continue // this field is not accessible to this division
+			}
 			slots := availMap[field.ID]
 			slotsByDate := make(map[string]int)
 			for _, slot := range slots {
@@ -328,12 +450,10 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 				totalFieldCapacity += count
 			}
 		}
-
 		if totalGamesRequired > totalFieldCapacity {
 			return fmt.Errorf(
-				"infeasible: need %d game slots (%d pairs × %d games/pair) but fields only provide %d effective slots after applying max_games_per_day limits — "+
-					"add more fields or availability windows, increase max_games_per_day, or reduce games_required",
-				totalGamesRequired, nTeams*(nTeams-1)/2, gamesPerPair, totalFieldCapacity,
+				"infeasible for division %s: need %d game slots (%d pairs × %d games/pair) but accessible fields only provide %d effective slots",
+				divLabel(divID), totalGamesRequired, len(divTeams)*(len(divTeams)-1)/2, gamesPerPair, totalFieldCapacity,
 			)
 		}
 	}
@@ -349,10 +469,13 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		PreferredInterleagueDates: prefDates,
 		Constraints:               solverConstraints,
 		TimeLimitSeconds:          60,
+		DivisionFieldRestrictions: divisionFieldRestrictions,
+		DivisionPreferredFields:   divisionPreferredFields,
 	}
 
 	// 7. Call scheduler-engine
-	log.Printf("Calling scheduler-engine for season %s (%d teams, %d fields)", seasonID, len(solverTeams), len(solverFields))
+	log.Printf("Calling scheduler-engine for season %s (%d teams across %d divisions, %d fields)",
+		seasonID, len(solverTeams), len(season.DivisionIDs), len(solverFields))
 	solveResp, err := g.schedulerClient.Solve(ctx, solveReq)
 	if err != nil {
 		return fmt.Errorf("solver error: %w", err)
@@ -372,6 +495,12 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		return fmt.Errorf("clear old games: %w", err)
 	}
 
+	// Build home-team → division lookup for game records
+	teamDivision := make(map[string]string, len(allTeams))
+	for _, t := range allTeams {
+		teamDivision[t.ID] = t.DivisionID
+	}
+
 	newGames := make([]model.Game, len(solveResp.Games))
 	for i, sg := range solveResp.Games {
 		newGames[i] = model.Game{
@@ -382,6 +511,7 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 			GameDate:      sg.GameDate,
 			StartTime:     sg.StartTime,
 			Status:        "scheduled",
+			DivisionID:    teamDivision[sg.HomeTeamID],
 			IsInterleague: sg.IsInterleague,
 		}
 	}

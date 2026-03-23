@@ -101,28 +101,60 @@ def solve(request: SolveRequest) -> SolveResponse:
             pair = (min(ai, bi), max(ai, bi))
             matchup_limits[pair] = (rule.min_games, rule.max_games)
 
+    # --- Build per-team allowed field sets from division restrictions ---
+    div_restrictions: dict[str, list[str]] = dict(request.division_field_restrictions or {})
+    team_allowed_fields: list[set[str] | None] = []
+    for team in teams:
+        allowed = div_restrictions.get(team.division_id)
+        team_allowed_fields.append(set(allowed) if allowed is not None else None)
+
     # --- Build CP-SAT model ---
     model = cp_model.CpModel()
 
-    # Decision variables
+    # Decision variables — sparse: only create for valid team-field combinations.
+    # Cross-division pairs are only created if an explicit matchup rule exists.
     # x[i, j, s] = team i (home) vs team j (away) at slot s
     x: dict[tuple[int, int, int], cp_model.IntVar] = {}
     for i in range(n_teams):
         for j in range(n_teams):
             if i == j:
                 continue
+            # Cross-division pairs only if there's an explicit matchup rule
+            if teams[i].division_id != teams[j].division_id:
+                pair = (min(i, j), max(i, j))
+                if pair not in matchup_limits:
+                    continue
+            ta = team_allowed_fields[i]
+            tb = team_allowed_fields[j]
             for s in range(n_slots):
+                fid = all_slots[s][0]
+                if ta is not None and fid not in ta:
+                    continue
+                if tb is not None and fid not in tb:
+                    continue
                 x[i, j, s] = model.new_bool_var(f"x_{i}_{j}_{s}")
 
     # Helper: all vars where team i plays (home or away) at slot s
     def team_plays_at(i: int, s: int) -> list[cp_model.IntVar]:
-        return [x[i, j, s] for j in range(n_teams) if i != j] + \
-               [x[j, i, s] for j in range(n_teams) if i != j]
+        result = []
+        for j in range(n_teams):
+            if i == j:
+                continue
+            if (i, j, s) in x:
+                result.append(x[i, j, s])
+            if (j, i, s) in x:
+                result.append(x[j, i, s])
+        return result
 
     # Helper: total games between pair (i, j) regardless of home/away
     def pair_game_vars(i: int, j: int) -> list[cp_model.IntVar]:
-        return [x[i, j, s] for s in range(n_slots)] + \
-               [x[j, i, s] for s in range(n_slots)]
+        result = []
+        for s in range(n_slots):
+            if (i, j, s) in x:
+                result.append(x[i, j, s])
+            if (j, i, s) in x:
+                result.append(x[j, i, s])
+        return result
 
     # --- Variables dict for constraint handlers ---
     variables = {
@@ -163,9 +195,15 @@ def solve(request: SolveRequest) -> SolveResponse:
                 handler.apply(model, variables, request, {})
 
     # --- One game per slot: each slot hosts at most 1 game ---
+    # Build per-slot variable lists from sparse x dict (avoids iterating all i,j for each slot)
+    vars_by_slot: dict[int, list] = defaultdict(list)
+    for (i, j, s), var in x.items():
+        vars_by_slot[s].append(var)
+
     for s in range(n_slots):
-        all_at_slot = [x[i, j, s] for i in range(n_teams) for j in range(n_teams) if i != j]
-        model.add(sum(all_at_slot) <= 1)
+        slot_vars = vars_by_slot.get(s, [])
+        if slot_vars:
+            model.add(sum(slot_vars) <= 1)
 
     # --- Build objective ---
     obj_terms = variables["objective_terms"]

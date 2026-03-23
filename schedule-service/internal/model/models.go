@@ -6,14 +6,14 @@ import (
 )
 
 type Season struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	DivisionID string    `json:"division_id"`
-	StartDate  string    `json:"start_date"` // "2025-04-01"
-	EndDate    string    `json:"end_date"`
-	Status     string    `json:"status"` // draft|generating|review|published
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	DivisionIDs []string  `json:"division_ids"`
+	StartDate   string    `json:"start_date"` // "2025-04-01"
+	EndDate     string    `json:"end_date"`
+	Status      string    `json:"status"` // draft|generating|review|published
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type SeasonBlackout struct {
@@ -50,6 +50,7 @@ type Game struct {
 	GameDate       string    `json:"game_date"`
 	StartTime      string    `json:"start_time"`
 	Status         string    `json:"status"` // scheduled|cancelled|completed
+	DivisionID     string    `json:"division_id"`
 	IsInterleague  bool      `json:"is_interleague"`
 	ManuallyEdited bool      `json:"manually_edited"`
 	CreatedAt      time.Time `json:"created_at"`

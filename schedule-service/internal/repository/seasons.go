@@ -13,10 +13,34 @@ type SeasonRepo struct{ db *pgxpool.Pool }
 
 func NewSeasonRepo(db *pgxpool.Pool) *SeasonRepo { return &SeasonRepo{db: db} }
 
+const seasonSelect = `
+	SELECT s.id, s.name, s.start_date::text, s.end_date::text, s.status,
+	       s.created_at, s.updated_at,
+	       COALESCE(
+	         array_agg(sd.division_id::text ORDER BY sd.division_id)
+	           FILTER (WHERE sd.division_id IS NOT NULL),
+	         ARRAY[]::text[]
+	       ) AS division_ids
+	FROM seasons s
+	LEFT JOIN season_divisions sd ON sd.season_id = s.id`
+
+func scanSeason(row pgx.Row) (*model.Season, error) {
+	var s model.Season
+	if err := row.Scan(
+		&s.ID, &s.Name, &s.StartDate, &s.EndDate, &s.Status,
+		&s.CreatedAt, &s.UpdatedAt, &s.DivisionIDs,
+	); err != nil {
+		return nil, err
+	}
+	if s.DivisionIDs == nil {
+		s.DivisionIDs = []string{}
+	}
+	return &s, nil
+}
+
 func (r *SeasonRepo) List(ctx context.Context) ([]model.Season, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, name, division_id, start_date::text, end_date::text, status, created_at, updated_at
-		 FROM seasons ORDER BY created_at DESC`)
+		seasonSelect+` GROUP BY s.id ORDER BY s.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -24,67 +48,96 @@ func (r *SeasonRepo) List(ctx context.Context) ([]model.Season, error) {
 
 	var seasons []model.Season
 	for rows.Next() {
-		var s model.Season
-		if err := rows.Scan(&s.ID, &s.Name, &s.DivisionID, &s.StartDate, &s.EndDate,
-			&s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		s, err := scanSeason(rows)
+		if err != nil {
 			return nil, err
 		}
-		seasons = append(seasons, s)
+		seasons = append(seasons, *s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	if seasons == nil {
 		seasons = []model.Season{}
 	}
-	return seasons, rows.Err()
+	return seasons, nil
 }
 
 func (r *SeasonRepo) Create(ctx context.Context, s model.Season) (*model.Season, error) {
-	var out model.Season
-	err := r.db.QueryRow(ctx,
-		`INSERT INTO seasons (name, division_id, start_date, end_date, status)
-		 VALUES ($1, $2, $3, $4, 'draft')
-		 RETURNING id, name, division_id, start_date::text, end_date::text, status, created_at, updated_at`,
-		s.Name, s.DivisionID, s.StartDate, s.EndDate,
-	).Scan(&out.ID, &out.Name, &out.DivisionID, &out.StartDate, &out.EndDate,
-		&out.Status, &out.CreatedAt, &out.UpdatedAt)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &out, nil
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var id string
+	err = tx.QueryRow(ctx,
+		`INSERT INTO seasons (name, start_date, end_date, status)
+		 VALUES ($1, $2, $3, 'draft')
+		 RETURNING id`,
+		s.Name, s.StartDate, s.EndDate,
+	).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := insertDivisions(ctx, tx, id, s.DivisionIDs); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return r.Get(ctx, id)
 }
 
 func (r *SeasonRepo) Get(ctx context.Context, id string) (*model.Season, error) {
-	var s model.Season
-	err := r.db.QueryRow(ctx,
-		`SELECT id, name, division_id, start_date::text, end_date::text, status, created_at, updated_at
-		 FROM seasons WHERE id=$1`,
+	row := r.db.QueryRow(ctx,
+		seasonSelect+` WHERE s.id=$1 GROUP BY s.id`,
 		id,
-	).Scan(&s.ID, &s.Name, &s.DivisionID, &s.StartDate, &s.EndDate,
-		&s.Status, &s.CreatedAt, &s.UpdatedAt)
+	)
+	s, err := scanSeason(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
-	return &s, nil
+	return s, nil
 }
 
 func (r *SeasonRepo) Update(ctx context.Context, id string, s model.Season) (*model.Season, error) {
-	var out model.Season
-	err := r.db.QueryRow(ctx,
-		`UPDATE seasons SET name=$1, division_id=$2, start_date=$3, end_date=$4, updated_at=NOW()
-		 WHERE id=$5
-		 RETURNING id, name, division_id, start_date::text, end_date::text, status, created_at, updated_at`,
-		s.Name, s.DivisionID, s.StartDate, s.EndDate, id,
-	).Scan(&out.ID, &out.Name, &out.DivisionID, &out.StartDate, &out.EndDate,
-		&out.Status, &out.CreatedAt, &out.UpdatedAt)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
-	return &out, nil
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	result, err := tx.Exec(ctx,
+		`UPDATE seasons SET name=$1, start_date=$2, end_date=$3, updated_at=NOW()
+		 WHERE id=$4`,
+		s.Name, s.StartDate, s.EndDate, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if result.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM season_divisions WHERE season_id=$1`, id); err != nil {
+		return nil, err
+	}
+	if err := insertDivisions(ctx, tx, id, s.DivisionIDs); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return r.Get(ctx, id)
 }
 
 func (r *SeasonRepo) Delete(ctx context.Context, id string) error {
@@ -102,20 +155,36 @@ func (r *SeasonRepo) Delete(ctx context.Context, id string) error {
 }
 
 func (r *SeasonRepo) Upsert(ctx context.Context, s model.Season) error {
-	_, err := r.db.Exec(ctx,
-		`INSERT INTO seasons (id, name, division_id, start_date, end_date, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO seasons (id, name, start_date, end_date, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT (id) DO UPDATE
-		   SET name        = EXCLUDED.name,
-		       division_id = EXCLUDED.division_id,
-		       start_date  = EXCLUDED.start_date,
-		       end_date    = EXCLUDED.end_date,
-		       status      = EXCLUDED.status,
-		       updated_at  = EXCLUDED.updated_at`,
-		s.ID, s.Name, s.DivisionID, s.StartDate, s.EndDate,
+		   SET name       = EXCLUDED.name,
+		       start_date = EXCLUDED.start_date,
+		       end_date   = EXCLUDED.end_date,
+		       status     = EXCLUDED.status,
+		       updated_at = EXCLUDED.updated_at`,
+		s.ID, s.Name, s.StartDate, s.EndDate,
 		s.Status, s.CreatedAt, s.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM season_divisions WHERE season_id=$1`, s.ID); err != nil {
+		return err
+	}
+	if err := insertDivisions(ctx, tx, s.ID, s.DivisionIDs); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *SeasonRepo) UpdateStatus(ctx context.Context, id, status string) error {
@@ -123,4 +192,18 @@ func (r *SeasonRepo) UpdateStatus(ctx context.Context, id, status string) error 
 		`UPDATE seasons SET status=$1, updated_at=NOW() WHERE id=$2`,
 		status, id)
 	return err
+}
+
+// insertDivisions bulk-inserts division_ids for a season within an existing transaction.
+func insertDivisions(ctx context.Context, tx pgx.Tx, seasonID string, divisionIDs []string) error {
+	for _, divID := range divisionIDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO season_divisions (season_id, division_id) VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`,
+			seasonID, divID,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -36,9 +36,16 @@ class RoundRobinMatchupConstraint(ConstraintHandler):
         for i in range(n_teams):
             for j in range(i + 1, n_teams):
                 pair = (i, j)
-                min_g, max_g = matchup_limits.get(pair, (default_games_per_pair, default_games_per_pair))
-
                 game_vars = pair_game_vars(i, j)
+
+                if pair in matchup_limits:
+                    min_g, max_g = matchup_limits[pair]
+                else:
+                    if not game_vars:
+                        # Cross-division pair with no explicit rule and no variables — skip
+                        continue
+                    min_g = max_g = default_games_per_pair
+
                 total = sum(game_vars)
                 model.add(total >= min_g)
                 model.add(total <= max_g)

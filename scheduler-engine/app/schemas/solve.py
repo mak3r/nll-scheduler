@@ -56,6 +56,8 @@ class SolveRequest(BaseModel):
     preferred_interleague_dates: list[date] = Field(default_factory=list)
     constraints: list[ConstraintConfig] = Field(default_factory=list)
     time_limit_seconds: int = 60
+    division_field_restrictions: dict[str, list[str]] = Field(default_factory=dict)
+    division_preferred_fields: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class GameResult(BaseModel):

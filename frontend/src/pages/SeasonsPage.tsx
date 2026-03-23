@@ -92,7 +92,7 @@ export default function SeasonsPage() {
   // Create season form
   const [newSeason, setNewSeason] = useState({
     name: '',
-    division_id: '',
+    division_ids: [] as string[],
     start_date: '',
     end_date: '',
   })
@@ -163,7 +163,7 @@ export default function SeasonsPage() {
     e.preventDefault()
     try {
       const s = await seasonsApi.create(newSeason)
-      setNewSeason({ name: '', division_id: '', start_date: '', end_date: '' })
+      setNewSeason({ name: '', division_ids: [], start_date: '', end_date: '' })
       await loadInitial()
       setSelectedId(s.id)
     } catch (e) {
@@ -337,20 +337,28 @@ export default function SeasonsPage() {
                   style={{ ...inputStyle, width: '100%' }}
                 />
               </label>
-              <label>
-                Division<br />
-                <select
-                  value={newSeason.division_id}
-                  onChange={e => setNewSeason(p => ({ ...p, division_id: e.target.value }))}
-                  required
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="">Select division…</option>
-                  {divisions.map(d => (
-                    <option key={d.id} value={d.id}>{d.name} ({d.season_year})</option>
-                  ))}
-                </select>
-              </label>
+              <fieldset style={{ border: '1px solid #ccc', borderRadius: 4, padding: '0.4rem 0.75rem' }}>
+                <legend style={{ fontSize: '0.9rem' }}>Divisions (select at least one)</legend>
+                {divisions.length === 0 && (
+                  <p style={{ color: '#888', fontSize: '0.85rem', margin: '0.25rem 0' }}>No divisions available.</p>
+                )}
+                {divisions.map(d => (
+                  <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={newSeason.division_ids.includes(d.id)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setNewSeason(p => ({ ...p, division_ids: [...p.division_ids, d.id] }))
+                        } else {
+                          setNewSeason(p => ({ ...p, division_ids: p.division_ids.filter(id => id !== d.id) }))
+                        }
+                      }}
+                    />
+                    {d.name} ({d.season_year})
+                  </label>
+                ))}
+              </fieldset>
               <label>
                 Start Date<br />
                 <input
@@ -403,7 +411,7 @@ export default function SeasonsPage() {
                     </span>
                   </div>
                   <div style={{ fontSize: '0.8rem', color: '#666', marginTop: 2 }}>
-                    {divisionMap[s.division_id] || s.division_id} &middot; {s.start_date} &rarr; {s.end_date}
+                    {(s.division_ids || []).map(id => divisionMap[id] || id).join(', ') || '—'} &middot; {s.start_date} &rarr; {s.end_date}
                   </div>
                 </div>
               )
@@ -424,7 +432,7 @@ export default function SeasonsPage() {
                   <div>
                     <h2 style={{ margin: 0 }}>{selectedSeason.name}</h2>
                     <div style={{ color: '#666', fontSize: '0.9rem', marginTop: 4 }}>
-                      {divisionMap[selectedSeason.division_id] || selectedSeason.division_id}
+                      {(selectedSeason.division_ids || []).map(id => divisionMap[id] || id).join(', ') || '—'}
                       {' '}&middot;{' '}
                       {selectedSeason.start_date} &rarr; {selectedSeason.end_date}
                     </div>

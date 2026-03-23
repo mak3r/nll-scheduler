@@ -48,5 +48,5 @@ class PreferInterleagueDatesConstraint(ConstraintHandler):
                     if i == j:
                         continue
                     # Only interleague games get the bonus
-                    if i in interleague_team_indices or j in interleague_team_indices:
+                    if (i in interleague_team_indices or j in interleague_team_indices) and (i, j, s_idx) in x:
                         obj_terms.append(x[i, j, s_idx] * bonus)

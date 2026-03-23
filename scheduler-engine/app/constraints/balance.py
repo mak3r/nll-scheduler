@@ -38,9 +38,9 @@ class EvenHomeAwayBalanceConstraint(ConstraintHandler):
 
         for i in range(n_teams):
             # home_i = total home games for team i
-            home_i = sum(x[i, j, s] for j in range(n_teams) if i != j for s in range(n_slots))
+            home_i = sum(x[i, j, s] for j in range(n_teams) if i != j for s in range(n_slots) if (i, j, s) in x)
             # away_i = total away games for team i
-            away_i = sum(x[j, i, s] for j in range(n_teams) if i != j for s in range(n_slots))
+            away_i = sum(x[j, i, s] for j in range(n_teams) if i != j for s in range(n_slots) if (j, i, s) in x)
 
             # diff = home - away (can be negative)
             # We want to minimize |diff| = minimize imbalance

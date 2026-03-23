@@ -3,7 +3,7 @@ import { scheduleApi } from './client'
 export interface Season {
   id: string
   name: string
-  division_id: string
+  division_ids: string[]
   start_date: string
   end_date: string
   status: 'draft' | 'generating' | 'review' | 'published'
@@ -28,8 +28,25 @@ export interface Game {
   game_date: string
   start_time: string
   status: 'scheduled' | 'cancelled' | 'completed'
+  division_id: string
   is_interleague: boolean
   manually_edited: boolean
+}
+
+export interface TeamSummaryEntry {
+  team_id: string
+  home: number
+  away: number
+  total: number
+}
+
+export interface DivisionSummary {
+  division_id: string
+  teams: TeamSummaryEntry[]
+}
+
+export interface GamesSummaryResponse {
+  divisions: DivisionSummary[]
 }
 
 export interface GenerationRun {
@@ -74,6 +91,8 @@ export const gamesApi = {
     scheduleApi<{ conflicts: string[] }>(`/seasons/${seasonId}/games/check-conflicts`, {
       method: 'POST',
     }),
+  summary: (seasonId: string) =>
+    scheduleApi<GamesSummaryResponse>(`/seasons/${seasonId}/games/summary`),
   export: (seasonId: string, format: 'json' | 'csv') =>
     scheduleApi<unknown>(`/seasons/${seasonId}/export?format=${format}`),
 }

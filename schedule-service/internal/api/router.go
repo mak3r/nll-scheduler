@@ -69,6 +69,7 @@ func NewRouter(pool *pgxpool.Pool, teamServiceURL, fieldServiceURL, schedulerEng
 				r.Get("/", h.ListGames)
 				r.Post("/", h.CreateGame)
 				r.Post("/check-conflicts", h.CheckConflicts)
+				r.Get("/summary", h.GamesSummary)
 				r.Route("/{gameID}", func(r chi.Router) {
 					r.Get("/", h.GetGame)
 					r.Put("/", h.UpdateGame)
@@ -104,6 +105,10 @@ func (h *Handler) CreateSeason(w http.ResponseWriter, r *http.Request) {
 	var req model.Season
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.DivisionIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "season must include at least one division")
 		return
 	}
 	s, err := h.seasons.Create(r.Context(), req)
@@ -445,6 +450,48 @@ func (h *Handler) GetGenerationRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
+}
+
+func (h *Handler) GamesSummary(w http.ResponseWriter, r *http.Request) {
+	seasonID := chi.URLParam(r, "seasonID")
+	stats, err := h.games.SummaryBySeason(r.Context(), seasonID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Group by division
+	type teamEntry struct {
+		TeamID string `json:"team_id"`
+		Home   int    `json:"home"`
+		Away   int    `json:"away"`
+		Total  int    `json:"total"`
+	}
+	type divEntry struct {
+		DivisionID string      `json:"division_id"`
+		Teams      []teamEntry `json:"teams"`
+	}
+
+	divMap := make(map[string]*divEntry)
+	divOrder := make([]string, 0)
+	for _, s := range stats {
+		if _, ok := divMap[s.DivisionID]; !ok {
+			divMap[s.DivisionID] = &divEntry{DivisionID: s.DivisionID, Teams: []teamEntry{}}
+			divOrder = append(divOrder, s.DivisionID)
+		}
+		divMap[s.DivisionID].Teams = append(divMap[s.DivisionID].Teams, teamEntry{
+			TeamID: s.TeamID,
+			Home:   s.Home,
+			Away:   s.Away,
+			Total:  s.Home + s.Away,
+		})
+	}
+
+	result := make([]divEntry, 0, len(divOrder))
+	for _, divID := range divOrder {
+		result = append(result, *divMap[divID])
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"divisions": result})
 }
 
 func (h *Handler) ExportSchedule(w http.ResponseWriter, r *http.Request) {

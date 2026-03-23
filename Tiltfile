@@ -5,6 +5,9 @@
 # Allow the local dev context (prevents Tilt's production cluster warning)
 allow_k8s_contexts('local-dev')
 
+# Push images to ghcr.io so any cluster can pull them
+default_registry('ghcr.io/mak3r/nll-scheduler')
+
 # Dev namespace
 k8s_yaml('k8s/namespace.yaml')
 

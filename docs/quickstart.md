@@ -6,17 +6,40 @@ Get the full NLL Scheduler stack running locally in under 10 minutes.
 
 | Tool | Purpose | Install |
 |---|---|---|
-| [Rancher Desktop](https://rancherdesktop.io/) | Local Kubernetes cluster + container runtime | Download from rancherdesktop.io |
-| `kubectl` | Kubernetes CLI | Bundled with Rancher Desktop |
+| Kubernetes cluster | Any local cluster `kubectl` can reach | [Rancher Desktop](https://rancherdesktop.io/), [k3s](https://k3s.io/), [kind](https://kind.sigs.k8s.io/), or [k3d](https://k3d.io/) |
+| `kubectl` | Kubernetes CLI | Bundled with Rancher Desktop, or `brew install kubectl` |
+| Container runtime | Builds and pushes images | [Colima](https://github.com/abiosoft/colima) (recommended), or Rancher Desktop's built-in runtime |
 | [Tilt](https://docs.tilt.dev/install.html) | Dev orchestration (builds, deploys, port-forwards, live reload) | `brew install tilt-dev/tap/tilt` |
+| [GitHub CLI](https://cli.github.com/) | Authenticates with ghcr.io | `brew install gh` |
 
-> **Alternatives to Rancher Desktop:** [kind](https://kind.sigs.k8s.io/) or [k3d](https://k3d.io/) also work — any cluster that `kubectl` can reach will do. If you prefer Podman over Rancher Desktop, see [Using Podman](#using-podman) below.
+> Images are pushed to `ghcr.io/mak3r/nll-scheduler` during development, so any cluster with internet access can pull them — no local registry required.
 
 ### Verify your setup
 
 ```bash
 kubectl config current-context   # should show your local cluster
 tilt version                     # should print a version number
+```
+
+## Container runtime setup
+
+If using **Colima** (recommended on macOS without Rancher Desktop):
+
+```bash
+brew install colima
+colima start
+export DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock
+```
+
+Add the `export` to `~/.zshrc` to avoid setting it each session.
+
+### Authenticate with ghcr.io
+
+Tilt pushes images to `ghcr.io/mak3r/nll-scheduler` — authenticate once before running `tilt up`:
+
+```bash
+gh auth login                    # if not already logged in to GitHub CLI
+echo $(gh auth token) | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
 
 ## Start the stack
@@ -91,35 +114,6 @@ Open [http://localhost:3000](http://localhost:3000) and follow these steps:
 - Use **Check Conflicts** to detect any field double-bookings
 - Edit individual games if needed (date, time, field, status)
 - Use **Export** to download the schedule as JSON
-
-## Using Podman
-
-If you use [Podman](https://podman.io/) (e.g. installed via Homebrew) instead of Rancher Desktop, Tilt needs to be pointed at Podman's Docker-compatible socket.
-
-**One-time setup:**
-
-```bash
-brew install vfkit          # macOS Virtualization Framework driver required by Podman
-podman machine init         # downloads Fedora CoreOS VM (~700 MB), first run only
-podman machine start
-```
-
-**Before each `tilt up` session**, export `DOCKER_HOST` so Tilt finds the socket:
-
-```bash
-export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
-tilt up
-```
-
-To avoid setting this every session, add the export to your shell profile (`~/.zshrc`):
-
-```bash
-export DOCKER_HOST="unix://${HOME}/.local/share/containers/podman/machine/podman-machine-default/podman.sock"
-```
-
-> The exact socket path may differ — use `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'` to confirm.
-
-No changes to the Tiltfile are required.
 
 ## Tear down
 

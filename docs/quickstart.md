@@ -28,14 +28,9 @@ tilt version                     # should print a version number
 
 ```bash
 softwareupdate --install-rosetta   # required on Apple Silicon for VM bootstrap
+brew install vfkit podman
 podman machine init
 podman machine start
-```
-
-**Set `DOCKER_HOST`** so Tilt finds the Podman socket. Add this to `~/.zshrc`:
-
-```bash
-export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
 ```
 
 ### Authenticate with ghcr.io
@@ -49,11 +44,15 @@ echo $(gh auth token) | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-
 
 ## Start the stack
 
+On macOS with Podman, use the wrapper script instead of `tilt up` directly. It creates an SSH tunnel from a local socket to the Podman VM, launches Tilt, and tears the tunnel down on exit:
+
 ```bash
 git clone https://github.com/mak3r/nll-scheduler.git
 cd nll-scheduler
-tilt up
+./scripts/tilt-up.sh
 ```
+
+The script also starts the Podman machine automatically if it isn't already running.
 
 Tilt will:
 1. Build Docker images for all five services

@@ -27,6 +27,7 @@ tilt version                     # should print a version number
 **One-time Podman machine initialization** (downloads a Fedora CoreOS VM, ~700 MB):
 
 ```bash
+softwareupdate --install-rosetta   # required on Apple Silicon for VM bootstrap
 podman machine init
 podman machine start
 ```

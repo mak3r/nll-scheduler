@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nll-scheduler/schedule-service/internal/model"
@@ -191,6 +193,85 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 			Params: params,
 			IsHard: c.IsHard,
 			Weight: c.Weight,
+		}
+	}
+
+	// Compute games_per_pair from teams' games_required and inject into
+	// round_robin_matchup unless the user has already set it explicitly.
+	// Formula: round(avg_games_required / (n_teams - 1))
+	nTeams := len(solverTeams)
+	if nTeams >= 2 {
+		totalRequired := 0
+		for _, t := range solverTeams {
+			totalRequired += t.GamesRequired
+		}
+		avgRequired := totalRequired / nTeams
+		nPairs := nTeams - 1
+		gamesPerPair := (avgRequired + nPairs/2) / nPairs // integer round
+		if gamesPerPair < 1 {
+			gamesPerPair = 1
+		}
+
+		// Find existing round_robin_matchup constraint
+		rrIdx := -1
+		for i, c := range solverConstraints {
+			if c.Type == "round_robin_matchup" {
+				rrIdx = i
+				break
+			}
+		}
+		if rrIdx >= 0 {
+			// Inject default_games_per_pair only if not already explicitly set
+			var p map[string]interface{}
+			if err := json.Unmarshal(solverConstraints[rrIdx].Params, &p); err != nil || p == nil {
+				p = map[string]interface{}{}
+			}
+			if _, alreadySet := p["default_games_per_pair"]; !alreadySet {
+				p["default_games_per_pair"] = gamesPerPair
+				updated, _ := json.Marshal(p)
+				solverConstraints[rrIdx].Params = json.RawMessage(updated)
+			}
+		} else {
+			// No round_robin_matchup configured; add one with computed games_per_pair
+			params, _ := json.Marshal(map[string]int{"default_games_per_pair": gamesPerPair})
+			solverConstraints = append(solverConstraints, SolverConstraint{
+				Type:   "round_robin_matchup",
+				Params: json.RawMessage(params),
+				IsHard: true,
+				Weight: 1.0,
+			})
+		}
+		log.Printf("round_robin_matchup: games_per_pair=%d (avg_required=%d, n_teams=%d)", gamesPerPair, avgRequired, nTeams)
+
+		// Pre-flight: check that max_games_per_team_per_week × season_weeks ≥ games_per_pair.
+		// This catches the most common infeasibility before handing off to the solver.
+		maxPerWeek := 2 // default (matches builder.py default)
+		for _, c := range solverConstraints {
+			if c.Type == "max_games_per_team_per_week" {
+				var p map[string]interface{}
+				if err := json.Unmarshal(c.Params, &p); err == nil {
+					if v, ok := p["max_games_per_week"]; ok {
+						switch n := v.(type) {
+						case float64:
+							maxPerWeek = int(n)
+						case int:
+							maxPerWeek = n
+						}
+					}
+				}
+				break
+			}
+		}
+		seasonStart, _ := time.Parse("2006-01-02", season.StartDate)
+		seasonEnd, _ := time.Parse("2006-01-02", season.EndDate)
+		seasonWeeks := int(math.Ceil(seasonEnd.Sub(seasonStart).Hours() / (24 * 7)))
+		maxAchievable := maxPerWeek * seasonWeeks
+		if gamesPerPair > maxAchievable {
+			return fmt.Errorf(
+				"infeasible: need %d games per team but max_games_per_team_per_week=%d over %d weeks only allows %d — "+
+					"extend the season, increase max games/week, or reduce games_required",
+				gamesPerPair, maxPerWeek, seasonWeeks, maxAchievable,
+			)
 		}
 	}
 

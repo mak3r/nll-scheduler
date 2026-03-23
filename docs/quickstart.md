@@ -99,7 +99,8 @@ If you use [Podman](https://podman.io/) (e.g. installed via Homebrew) instead of
 **One-time setup:**
 
 ```bash
-podman machine init   # downloads Fedora CoreOS VM (~700 MB), first run only
+brew install vfkit          # macOS Virtualization Framework driver required by Podman
+podman machine init         # downloads Fedora CoreOS VM (~700 MB), first run only
 podman machine start
 ```
 

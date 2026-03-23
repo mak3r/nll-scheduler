@@ -34,6 +34,7 @@ ssh -fNT \
   core@127.0.0.1
 
 export DOCKER_HOST="unix://$SOCKET"
+export DOCKER_BUILDKIT=0  # Podman does not expose a BuildKit gRPC endpoint
 
 echo "Podman tunnel established on $SOCKET"
 

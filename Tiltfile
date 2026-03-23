@@ -2,6 +2,9 @@
 # Run: tilt up
 # Requires: kubectl pointing to dev cluster, Tilt installed
 
+# Allow the local dev context (prevents Tilt's production cluster warning)
+allow_k8s_contexts('local-dev')
+
 # Dev namespace
 k8s_yaml('k8s/namespace.yaml')
 

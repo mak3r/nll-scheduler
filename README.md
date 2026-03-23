@@ -51,4 +51,4 @@ See [docs/quickstart.md](docs/quickstart.md) for a full walkthrough.
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE).

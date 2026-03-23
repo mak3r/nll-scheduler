@@ -12,36 +12,38 @@ default_registry('ghcr.io/mak3r/nll-scheduler')
 k8s_yaml('k8s/namespace.yaml')
 
 # --- Image Builds ---
+# Use custom_build with podman directly — Podman's Docker-compatible API
+# does not reliably support the push endpoint used by docker_build.
 
 # Go services: rebuild on .go file changes (fast compile ~5s)
-docker_build(
+custom_build(
     'nll-scheduler/team-service',
-    context='team-service',
-    dockerfile='team-service/Dockerfile',
-    only=['cmd/', 'internal/', 'go.mod', 'go.sum'],
+    'podman build --platform linux/arm64 -t $EXPECTED_REF -f team-service/Dockerfile team-service && podman push $EXPECTED_REF',
+    ['team-service/cmd/', 'team-service/internal/', 'team-service/go.mod', 'team-service/go.sum'],
+    skips_local_docker=True,
 )
 
-docker_build(
+custom_build(
     'nll-scheduler/field-service',
-    context='field-service',
-    dockerfile='field-service/Dockerfile',
-    only=['cmd/', 'internal/', 'go.mod', 'go.sum'],
+    'podman build --platform linux/arm64 -t $EXPECTED_REF -f field-service/Dockerfile field-service && podman push $EXPECTED_REF',
+    ['field-service/cmd/', 'field-service/internal/', 'field-service/go.mod', 'field-service/go.sum'],
+    skips_local_docker=True,
 )
 
-docker_build(
+custom_build(
     'nll-scheduler/schedule-service',
-    context='schedule-service',
-    dockerfile='schedule-service/Dockerfile',
-    only=['cmd/', 'internal/', 'go.mod', 'go.sum'],
+    'podman build --platform linux/arm64 -t $EXPECTED_REF -f schedule-service/Dockerfile schedule-service && podman push $EXPECTED_REF',
+    ['schedule-service/cmd/', 'schedule-service/internal/', 'schedule-service/go.mod', 'schedule-service/go.sum'],
+    skips_local_docker=True,
 )
 
 # Python service: sync .py files directly into running container
 # uvicorn --reload picks up changes without restart
-docker_build(
+custom_build(
     'nll-scheduler/scheduler-engine',
-    context='scheduler-engine',
-    dockerfile='scheduler-engine/Dockerfile',
-    only=['app/', 'requirements.txt'],
+    'podman build --platform linux/arm64 -t $EXPECTED_REF -f scheduler-engine/Dockerfile scheduler-engine && podman push $EXPECTED_REF',
+    ['scheduler-engine/app/', 'scheduler-engine/requirements.txt'],
+    skips_local_docker=True,
     live_update=[
         sync('scheduler-engine/app', '/app/app'),
     ],
@@ -49,21 +51,20 @@ docker_build(
 
 # Frontend: dev stage with Vite HMR
 # Source files synced directly; HMR handles hot reload
-docker_build(
+custom_build(
     'nll-scheduler/frontend',
-    context='frontend',
-    dockerfile='frontend/Dockerfile',
-    target='dev',
-    only=[
-        'src/',
-        'public/',
-        'index.html',
-        'package.json',
-        'package-lock.json',
-        'vite.config.ts',
-        'tsconfig.json',
-        'tsconfig.node.json',
+    'podman build --platform linux/arm64 --target dev -t $EXPECTED_REF -f frontend/Dockerfile frontend && podman push $EXPECTED_REF',
+    [
+        'frontend/src/',
+        'frontend/public/',
+        'frontend/index.html',
+        'frontend/package.json',
+        'frontend/package-lock.json',
+        'frontend/vite.config.ts',
+        'frontend/tsconfig.json',
+        'frontend/tsconfig.node.json',
     ],
+    skips_local_docker=True,
     live_update=[
         sync('frontend/src', '/app/src'),
         sync('frontend/public', '/app/public'),

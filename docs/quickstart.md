@@ -43,6 +43,15 @@ gh auth refresh --scopes write:packages               # ensure the token has pac
 echo $(gh auth token) | podman login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
 
+### Make ghcr.io packages public
+
+The first time each image is pushed, GitHub creates the package as private. Your cluster must be able to pull images anonymously, so set each package to public after the first push:
+
+1. Go to **github.com/YOUR_GITHUB_USERNAME** → **Packages**
+2. Click each `nll-scheduler/*` package → **Package settings** → **Change visibility** → **Public**
+
+This is a one-time step per package.
+
 ## Start the stack
 
 On macOS with Podman, use the wrapper script instead of `tilt up` directly. It creates an SSH tunnel from a local socket to the Podman VM, launches Tilt, and tears the tunnel down on exit:
@@ -56,7 +65,7 @@ cd nll-scheduler
 The script also starts the Podman machine automatically if it isn't already running.
 
 Tilt will:
-1. Build Docker images for all five services
+1. Build images for all five services using Podman and push them to ghcr.io
 2. Apply the Kubernetes manifests to the `nll-scheduler-dev` namespace
 3. Set up port-forwards so you can reach every service from `localhost`
 

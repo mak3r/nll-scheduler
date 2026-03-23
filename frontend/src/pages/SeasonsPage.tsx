@@ -35,8 +35,8 @@ const CONSTRAINT_TYPES: Record<string, ConstraintDef> = {
     label: 'Max Games per Field per Day',
     isHard: true,
     defaultWeight: 1,
-    defaultParams: {},
-    paramFields: [],
+    defaultParams: { max_games_per_day: 4 },
+    paramFields: [{ key: 'max_games_per_day', label: 'Max Games/Day', type: 'number' }],
   },
   max_games_per_team_per_week: {
     label: 'Max Games per Team per Week',

@@ -273,6 +273,69 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 				gamesPerPair, maxPerWeek, seasonWeeks, maxAchievable,
 			)
 		}
+
+		// Pre-flight: check total effective field slot capacity >= total games required.
+		// Total games = C(n_teams, 2) * games_per_pair (each game involves 2 teams).
+		totalGamesRequired := nTeams * (nTeams - 1) / 2 * gamesPerPair
+
+		// Find explicit max_games_per_day override from constraints (if any)
+		maxGamesPerDayOverride := 0
+		for _, c := range solverConstraints {
+			if c.Type == "max_games_per_field_per_day" {
+				var p map[string]interface{}
+				if err := json.Unmarshal(c.Params, &p); err == nil {
+					if v, ok := p["max_games_per_day"]; ok {
+						switch n := v.(type) {
+						case float64:
+							maxGamesPerDayOverride = int(n)
+						case int:
+							maxGamesPerDayOverride = n
+						}
+					}
+				}
+				break
+			}
+		}
+
+		// Build season blackout set
+		blackoutSet := make(map[string]bool, len(blackoutDates))
+		for _, b := range blackoutDates {
+			blackoutSet[b] = true
+		}
+
+		// Compute effective total capacity: each (field, date) contributes
+		// min(slots_on_that_date, max_games_per_day) games.
+		totalFieldCapacity := 0
+		for _, field := range activeFields {
+			slots := availMap[field.ID]
+			slotsByDate := make(map[string]int)
+			for _, slot := range slots {
+				if !blackoutSet[slot.Date] {
+					slotsByDate[slot.Date]++
+				}
+			}
+			limit := field.MaxGamesPerDay
+			if maxGamesPerDayOverride > 0 {
+				limit = maxGamesPerDayOverride
+			}
+			if limit <= 0 {
+				limit = 4
+			}
+			for _, count := range slotsByDate {
+				if count > limit {
+					count = limit
+				}
+				totalFieldCapacity += count
+			}
+		}
+
+		if totalGamesRequired > totalFieldCapacity {
+			return fmt.Errorf(
+				"infeasible: need %d game slots (%d pairs × %d games/pair) but fields only provide %d effective slots after applying max_games_per_day limits — "+
+					"add more fields or availability windows, increase max_games_per_day, or reduce games_required",
+				totalGamesRequired, nTeams*(nTeams-1)/2, gamesPerPair, totalFieldCapacity,
+			)
+		}
 	}
 
 	solveReq := SolveRequest{

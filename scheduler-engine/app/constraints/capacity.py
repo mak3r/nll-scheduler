@@ -33,7 +33,8 @@ class MaxGamesPerFieldPerDayConstraint(ConstraintHandler):
             field = field_map.get(fid)
             if field is None:
                 continue
-            limit = int(params.get("max_games_per_day", field.max_games_per_day))
+            override = params.get("max_games_per_day")
+            limit = int(override) if override else field.max_games_per_day
 
             # Sum all games at this field on this date
             games_at = [

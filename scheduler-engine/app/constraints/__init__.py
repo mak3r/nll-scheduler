@@ -10,10 +10,16 @@ This is the only file that needs to change when adding new constraints.
 from app.constraints.balance import EvenHomeAwayBalanceConstraint
 from app.constraints.base import ConstraintHandler
 from app.constraints.capacity import MaxGamesPerFieldPerDayConstraint
-from app.constraints.daily_limit import NoSameDayRepeatMatchupConstraint, PreferMaxOneGamePerDayConstraint
+from app.constraints.daily_limit import (
+    NoSameDayRepeatMatchupConstraint,
+    PreferMaxOneGamePerDayConstraint,
+)
 from app.constraints.interleague import PreferInterleagueDatesConstraint
 from app.constraints.prefer_fields import PreferFieldsConstraint
-from app.constraints.rest import MaxGamesPerTeamPerWeekConstraint, MinRestDaysBetweenGamesConstraint
+from app.constraints.rest import (
+    MaxGamesPerTeamPerWeekConstraint,
+    MinRestDaysBetweenGamesConstraint,
+)
 from app.constraints.roundrobin import RoundRobinMatchupConstraint
 
 REGISTRY: dict[str, ConstraintHandler] = {

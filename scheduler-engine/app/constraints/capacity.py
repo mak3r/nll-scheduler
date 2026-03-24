@@ -3,7 +3,6 @@ Field and team capacity constraints.
 
 MaxGamesPerFieldPerDay: hard — a field can host at most max_games_per_day games per day.
 """
-from collections import defaultdict
 from typing import Any
 
 from ortools.sat.python import cp_model

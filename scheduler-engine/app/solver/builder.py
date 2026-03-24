@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date
 
 from ortools.sat.python import cp_model
 
 from app.constraints import REGISTRY
-from app.schemas.solve import FieldSlot, GameResult, SolveRequest, SolveResponse
+from app.schemas.solve import GameResult, SolveRequest, SolveResponse
 
 logger = logging.getLogger(__name__)
 

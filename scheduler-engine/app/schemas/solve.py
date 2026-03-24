@@ -5,6 +5,7 @@ These define the contract between schedule-service and scheduler-engine.
 from __future__ import annotations
 
 from datetime import date, time
+
 from pydantic import BaseModel, Field
 
 

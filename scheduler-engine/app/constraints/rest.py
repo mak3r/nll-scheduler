@@ -4,7 +4,6 @@ Rest day constraints.
 MaxGamesPerTeamPerWeek: hard — a team plays at most N games per calendar week.
 MinRestDaysBetweenGames: hard — a team must rest at least R days between games.
 """
-from collections import defaultdict
 from datetime import date
 from typing import Any
 
@@ -54,7 +53,6 @@ class MinRestDaysBetweenGamesConstraint(ConstraintHandler):
         teams = variables["teams"]
         n_teams = len(teams)
         slots_by_date: dict = variables["slots_by_date"]
-        slot_dates: list = variables["slot_dates"]
         team_plays_at = variables["team_plays_at"]
 
         min_rest = int(params.get("min_rest_days", 1))

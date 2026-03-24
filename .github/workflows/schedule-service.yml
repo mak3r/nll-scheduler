@@ -96,6 +96,6 @@ jobs:
             git diff --staged --quiet && break
             git commit -m "chore: update schedule-service image to ${{ github.sha }}"
             git push && break
-            git reset HEAD~1
+            git reset --hard HEAD~1
             sleep $((i * 2))
           done

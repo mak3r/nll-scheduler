@@ -6,7 +6,12 @@ Spin up an isolated AWS EC2 instance running k3s + ArgoCD for a usability tester
 
 - [OpenTofu](https://opentofu.org/docs/intro/install/) installed — on Mac: `brew install opentofu` (note: the package is `opentofu`, not `tofu`)
 - AWS account with permissions to create EC2 instances, security groups, key pairs, and Elastic IPs
-- AWS credentials configured (`aws configure` or environment variables)
+- AWS credentials configured — use `aws login` (IAM Identity Center), then export credentials to your shell before running tofu:
+  ```bash
+  aws login
+  eval $(aws configure export-credentials --format env)
+  ```
+  The export is required each time you open a new terminal session.
 - openSUSE Leap Micro 6 aarch64 AMI subscribed in AWS Marketplace for your target region
   - Search AWS Marketplace for: **openSUSE-Leap-Micro-6** — filter by arm64 and your region
   - Subscribe (free) and note the AMI ID

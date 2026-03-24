@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: nll-scheduler
+resources:
+  - namespace.yaml
+  - ingress.yaml
+  - team-service/deployment.yaml
+  - team-service/service.yaml
+  - team-service/configmap.yaml
+  - team-service/secret.yaml
+  - team-service/pvc.yaml
+  - field-service/deployment.yaml
+  - field-service/service.yaml
+  - field-service/configmap.yaml
+  - field-service/secret.yaml
+  - field-service/pvc.yaml
+  - schedule-service/deployment.yaml
+  - schedule-service/service.yaml
+  - schedule-service/configmap.yaml
+  - schedule-service/secret.yaml
+  - schedule-service/pvc.yaml
+  - scheduler-engine/deployment.yaml
+  - scheduler-engine/service.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+images:
+  - name: ghcr.io/mak3r/nll-scheduler/team-service
+    newTag: latest
+  - name: ghcr.io/mak3r/nll-scheduler/field-service
+    newTag: latest
+  - name: ghcr.io/mak3r/nll-scheduler/schedule-service
+    newTag: latest
+  - name: ghcr.io/mak3r/nll-scheduler/scheduler-engine
+    newTag: latest
+  - name: ghcr.io/mak3r/nll-scheduler/frontend
+    newTag: latest

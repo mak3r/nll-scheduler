@@ -126,23 +126,16 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		if err != nil {
 			return fmt.Errorf("fetch field rules for division %s: %w", divLabel(divID), err)
 		}
-		if len(fieldRules) > 0 {
-			allowed := make([]string, 0)
-			preferred := make([]string, 0)
-			for _, r := range fieldRules {
-				if r.RuleType == "allowed" || r.RuleType == "preferred" {
-					allowed = append(allowed, r.FieldID)
-				}
-				if r.RuleType == "preferred" {
-					preferred = append(preferred, r.FieldID)
-				}
+		for _, r := range fieldRules {
+			if r.RuleType == "allowed" {
+				divisionFieldRestrictions[divID] = append(divisionFieldRestrictions[divID], r.FieldID)
 			}
-			divisionFieldRestrictions[divID] = allowed
-			if len(preferred) > 0 {
-				divisionPreferredFields[divID] = preferred
+			if r.RuleType == "preferred" {
+				divisionPreferredFields[divID] = append(divisionPreferredFields[divID], r.FieldID)
 			}
 		}
-		// Division with no field rules → omit from map (solver treats as "all fields")
+		// Division with no "allowed" rules → omit from divisionFieldRestrictions (solver treats as "all fields")
+		// "preferred" rules only → soft preference, no hard restriction
 	}
 
 	if len(allTeams) < 2 {

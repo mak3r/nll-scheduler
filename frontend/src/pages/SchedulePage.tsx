@@ -142,6 +142,24 @@ export default function SchedulePage() {
     }
   }
 
+  async function moveGame(date: string, idx: number, direction: 'up' | 'down') {
+    if (!selectedSeasonId) return
+    const dayGames = gamesByDate[date]
+    const otherIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (otherIdx < 0 || otherIdx >= dayGames.length) return
+    const gameA = dayGames[idx]
+    const gameB = dayGames[otherIdx]
+    try {
+      await Promise.all([
+        gamesApi.update(selectedSeasonId, gameA.id, { start_time: gameB.start_time, manually_edited: true }),
+        gamesApi.update(selectedSeasonId, gameB.id, { start_time: gameA.start_time, manually_edited: true }),
+      ])
+      await loadGames(selectedSeasonId)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   async function checkConflicts() {
     if (!selectedSeasonId) return
     setConflictsLoading(true)
@@ -225,6 +243,24 @@ export default function SchedulePage() {
   }, {})
 
   const sortedDates = Object.keys(gamesByDate).sort()
+
+  // Detect teams playing more than once on the same day (double-headers)
+  const doubleHeaderKeys = new Set<string>() // `${date}:${teamId}`
+  for (const date of sortedDates) {
+    const counts: Record<string, number> = {}
+    for (const g of gamesByDate[date]) {
+      if (g.status === 'cancelled') continue
+      counts[g.home_team_id] = (counts[g.home_team_id] || 0) + 1
+      counts[g.away_team_id] = (counts[g.away_team_id] || 0) + 1
+    }
+    for (const [teamId, n] of Object.entries(counts)) {
+      if (n > 1) doubleHeaderKeys.add(`${date}:${teamId}`)
+    }
+  }
+  function isDoubleHeader(game: Game) {
+    return doubleHeaderKeys.has(`${game.game_date}:${game.home_team_id}`) ||
+           doubleHeaderKeys.has(`${game.game_date}:${game.away_team_id}`)
+  }
 
   const inputStyle: React.CSSProperties = { padding: '0.35rem', borderRadius: 4, border: '1px solid #ccc', fontSize: '0.85rem' }
   const tdStyle: React.CSSProperties = { padding: '0.4rem 0.5rem', verticalAlign: 'middle' }
@@ -376,9 +412,9 @@ export default function SchedulePage() {
               </tr>
             </thead>
             <tbody>
-              {gamesByDate[date].map(game => (
+              {gamesByDate[date].map((game, idx) => (
                 <Fragment key={game.id}>
-                  <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  <tr style={{ borderBottom: '1px solid #f0f0f0', background: isDoubleHeader(game) ? '#fffbea' : undefined }}>
                     <td style={tdStyle}>{game.start_time}</td>
                     <td style={{ ...tdStyle, color: '#555', fontSize: '0.83rem' }}>
                       {divisions[game.division_id]?.name ?? game.division_id ?? '—'}
@@ -413,8 +449,31 @@ export default function SchedulePage() {
                           interleague
                         </span>
                       )}
+                      {isDoubleHeader(game) && (
+                        <span style={{ background: '#fff3cd', color: '#856404', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', marginLeft: game.is_interleague ? 4 : 0 }} title="One or more teams play twice today">
+                          double-header
+                        </span>
+                      )}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {editingGameId !== game.id && (
+                        <>
+                          <button
+                            onClick={() => moveGame(date, idx, 'up')}
+                            disabled={idx === 0}
+                            className="btn"
+                            style={{ fontSize: '0.75rem', padding: '1px 6px', marginRight: 2, opacity: idx === 0 ? 0.3 : 1 }}
+                            title="Move earlier"
+                          >↑</button>
+                          <button
+                            onClick={() => moveGame(date, idx, 'down')}
+                            disabled={idx === gamesByDate[date].length - 1}
+                            className="btn"
+                            style={{ fontSize: '0.75rem', padding: '1px 6px', marginRight: 4, opacity: idx === gamesByDate[date].length - 1 ? 0.3 : 1 }}
+                            title="Move later"
+                          >↓</button>
+                        </>
+                      )}
                       <button
                         onClick={() => editingGameId === game.id ? cancelEdit() : startEdit(game)}
                         className="btn btn-primary"

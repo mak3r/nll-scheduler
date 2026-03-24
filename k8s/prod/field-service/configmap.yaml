@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: field-service-config
+  namespace: nll-scheduler
+data:
+  PORT: "8080"
+  POSTGRES_DB: "field_db"
+  POSTGRES_USER: "field_user"

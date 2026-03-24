@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''type''\\), str\\(d.get\\(''message'',{}\\)\\)[:300]\\)\" done)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh api:*)"
     ]
   }
 }

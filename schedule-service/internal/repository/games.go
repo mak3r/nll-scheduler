@@ -16,7 +16,7 @@ func NewGamesRepo(db *pgxpool.Pool) *GamesRepo { return &GamesRepo{db: db} }
 func (r *GamesRepo) List(ctx context.Context, seasonID string) ([]model.Game, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT id, season_id, home_team_id, away_team_id, field_id,
-		        game_date::text, start_time::text, status, division_id,
+		        game_date::text, start_time::text, status, COALESCE(division_id, ''),
 		        is_interleague, manually_edited, created_at, updated_at
 		 FROM games WHERE season_id=$1 ORDER BY game_date, start_time`,
 		seasonID)
@@ -51,7 +51,7 @@ func (r *GamesRepo) Create(ctx context.Context, g model.Game) (*model.Game, erro
 		    status, division_id, is_interleague, manually_edited)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING id, season_id, home_team_id, away_team_id, field_id,
-		           game_date::text, start_time::text, status, division_id,
+		           game_date::text, start_time::text, status, COALESCE(division_id, ''),
 		           is_interleague, manually_edited, created_at, updated_at`,
 		g.SeasonID, g.HomeTeamID, g.AwayTeamID, g.FieldID,
 		g.GameDate, g.StartTime, g.Status, g.DivisionID, g.IsInterleague, g.ManuallyEdited,
@@ -70,7 +70,7 @@ func (r *GamesRepo) Get(ctx context.Context, id string) (*model.Game, error) {
 	var g model.Game
 	err := r.db.QueryRow(ctx,
 		`SELECT id, season_id, home_team_id, away_team_id, field_id,
-		        game_date::text, start_time::text, status, division_id,
+		        game_date::text, start_time::text, status, COALESCE(division_id, ''),
 		        is_interleague, manually_edited, created_at, updated_at
 		 FROM games WHERE id=$1`,
 		id,
@@ -96,7 +96,7 @@ func (r *GamesRepo) Update(ctx context.Context, id string, g model.Game) (*model
 		     status=$6, is_interleague=$7, manually_edited=true, updated_at=NOW()
 		 WHERE id=$8
 		 RETURNING id, season_id, home_team_id, away_team_id, field_id,
-		           game_date::text, start_time::text, status, division_id,
+		           game_date::text, start_time::text, status, COALESCE(division_id, ''),
 		           is_interleague, manually_edited, created_at, updated_at`,
 		g.HomeTeamID, g.AwayTeamID, g.FieldID, g.GameDate, g.StartTime,
 		g.Status, g.IsInterleague, id,
@@ -131,7 +131,7 @@ func (r *GamesRepo) Delete(ctx context.Context, id string) error {
 func (r *GamesRepo) ListAll(ctx context.Context) ([]model.Game, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT id, season_id, home_team_id, away_team_id, field_id,
-		        game_date::text, start_time::text, status, division_id,
+		        game_date::text, start_time::text, status, COALESCE(division_id, ''),
 		        is_interleague, manually_edited, created_at, updated_at
 		 FROM games ORDER BY season_id, game_date, start_time`)
 	if err != nil {
@@ -215,7 +215,7 @@ func (r *GamesRepo) SummaryBySeason(ctx context.Context, seasonID string) ([]Tea
 		 SELECT division_id, away_team_id, 0, COUNT(*)
 		 FROM games WHERE season_id=$1 AND status != 'cancelled' AND division_id IS NOT NULL
 		 GROUP BY division_id, away_team_id`,
-		seasonID, seasonID,
+		seasonID,
 	)
 	if err != nil {
 		return nil, err

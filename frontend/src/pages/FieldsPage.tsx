@@ -37,7 +37,7 @@ export default function FieldsPage() {
   const [newBlackout, setNewBlackout] = useState<Record<string, BlackoutForm>>({})
 
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
-  const [editFieldForm, setEditFieldForm] = useState({ name: '', address: '', maxGamesPerDay: 4 })
+  const [editFieldForm, setEditFieldForm] = useState({ name: '', address: '', maxGamesPerDay: 4, isActive: true })
 
   useEffect(() => { loadFields() }, [])
 
@@ -97,6 +97,7 @@ export default function FieldsPage() {
       name: field.name,
       address: field.address ?? '',
       maxGamesPerDay: field.max_games_per_day,
+      isActive: field.is_active,
     })
   }
 
@@ -106,6 +107,7 @@ export default function FieldsPage() {
         name: editFieldForm.name,
         address: editFieldForm.address || undefined,
         max_games_per_day: editFieldForm.maxGamesPerDay,
+        is_active: editFieldForm.isActive,
       })
       setEditingFieldId(null)
       await loadFields()
@@ -294,6 +296,10 @@ export default function FieldsPage() {
                     style={{ cursor: 'help', color: '#888', fontSize: '0.85rem' }}
                   >ⓘ</span><br />
                   <input type="number" value={editFieldForm.maxGamesPerDay} min={1} onChange={e => setEditFieldForm(p => ({ ...p, maxGamesPerDay: Number(e.target.value) }))} style={{ ...inputStyle, width: 80 }} />
+                </label>
+                <label style={{ fontSize: '0.9rem', alignSelf: 'flex-end' }}>
+                  <input type="checkbox" checked={editFieldForm.isActive} onChange={e => setEditFieldForm(p => ({ ...p, isActive: e.target.checked }))} style={{ marginRight: '0.35rem' }} />
+                  Active
                 </label>
                 <div style={{ display: 'flex', gap: '0.25rem', alignSelf: 'flex-end' }}>
                   <button onClick={() => saveField(field.id)} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Save</button>

@@ -88,6 +88,22 @@ kubeconfig
 .classpath
 .settings/
 
+# ── OpenTofu / Terraform ─────────────────────────────────────────────────────
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # ── Secrets / credentials ────────────────────────────────────────────────────
 *.pem
 *.key

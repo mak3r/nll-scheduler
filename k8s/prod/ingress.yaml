@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nll-scheduler-ingress
+  namespace: nll-scheduler
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /api/teams(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: team-service
+            port:
+              number: 8080
+      - path: /api/fields(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: field-service
+            port:
+              number: 8080
+      - path: /api/schedule(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: schedule-service
+            port:
+              number: 8080
+      - path: /()(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80

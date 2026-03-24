@@ -187,7 +187,8 @@ def solve(request: SolveRequest) -> SolveResponse:
     # --- Apply built-in defaults if not explicitly configured ---
     # Always apply these core constraints if not already registered
     for builtin_type in ("round_robin_matchup", "max_games_per_field_per_day",
-                         "max_games_per_team_per_week", "min_rest_days_between_games"):
+                         "max_games_per_team_per_week", "min_rest_days_between_games",
+                         "no_same_day_repeat_matchup", "prefer_max_one_game_per_day"):
         if builtin_type not in registered_types:
             handler = REGISTRY.get(builtin_type)
             if handler:

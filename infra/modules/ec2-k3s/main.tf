@@ -46,7 +46,6 @@ resource "aws_instance" "nll_scheduler" {
 
   user_data = templatefile("${path.module}/cloud-init.sh.tpl", {
     app_version = var.app_version
-    image_tag   = var.image_tag
   })
 
   root_block_device {

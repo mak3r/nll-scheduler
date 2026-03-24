@@ -20,5 +20,4 @@ module "ec2_k3s" {
   aws_region    = var.aws_region
   key_name      = var.key_name
   app_version   = var.app_version
-  image_tag     = var.image_tag
 }

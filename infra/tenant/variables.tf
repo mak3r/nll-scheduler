@@ -32,8 +32,3 @@ variable "app_version" {
   default     = "main"
 }
 
-variable "image_tag" {
-  description = "Container image tag to deploy — must exist in ghcr.io/mak3r/nll-scheduler"
-  type        = string
-  default     = "latest"
-}

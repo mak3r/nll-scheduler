@@ -32,8 +32,3 @@ variable "app_version" {
   default     = "main"
 }
 
-variable "image_tag" {
-  description = "Container image tag to deploy (matches a tag pushed to ghcr.io)"
-  type        = string
-  default     = "latest"
-}

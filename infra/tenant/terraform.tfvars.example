@@ -10,5 +10,4 @@ ami_id      = ""       # openSUSE Leap Micro 6 aarch64 AMI — find in AWS Marke
 aws_region    = "us-east-1"
 instance_type = "t4g.medium" # ARM64, 4GB RAM — required to run k3s + all services
 app_version   = "main"       # Git branch, tag, or SHA for manifest version
-image_tag     = "latest"     # Container image tag (use a git SHA to pin a specific build)
 key_name      = ""           # EC2 key pair name for SSH (leave empty to skip)

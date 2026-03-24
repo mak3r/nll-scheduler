@@ -30,7 +30,7 @@ tofu plan
 tofu apply
 ```
 
-After `apply`, Tofu outputs the `app_url`. The app takes **~3–5 minutes** to become available while cloud-init installs k3s, ArgoCD, and deploys the services in the background.
+After `apply`, Tofu outputs the `app_url`. The app takes **~10–15 minutes** to become available while cloud-init installs k3s, ArgoCD, and deploys the services in the background.
 
 ```bash
 # Check if the app is up:
@@ -49,7 +49,6 @@ curl http://<public_ip>/api/teams/health
 | `aws_region` | `us-east-1` | AWS region |
 | `instance_type` | `t4g.medium` | ARM64 instance, 4GB RAM — required for k3s + all services |
 | `app_version` | `main` | Git branch/tag for manifest version |
-| `image_tag` | `latest` | Container image tag from ghcr.io |
 | `key_name` | `""` | EC2 key pair for SSH (empty = no SSH access) |
 
 ## Teardown
@@ -117,6 +116,20 @@ sudo cat /var/log/cloud-init-output.log
 ArgoCD does not expose its UI externally. To check sync status, SSH in and:
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-kubectl get applications -n argocd
+kubectl get application nll-scheduler -n argocd
 kubectl get pods -n nll-scheduler
+```
+
+**Pods stuck on `:latest` or wrong image tag:**
+The ArgoCD Application may have stale kustomize image overrides. Remove them so it uses `k8s/prod/kustomization.yaml` directly:
+```bash
+kubectl patch application nll-scheduler -n argocd --type json \
+  -p '[{"op": "remove", "path": "/spec/source/kustomize"}]'
+kubectl patch application nll-scheduler -n argocd \
+  --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+```
+
+**argocd-repo-server stuck in Unknown:**
+```bash
+kubectl delete pod -n argocd -l app.kubernetes.io/name=argocd-repo-server
 ```

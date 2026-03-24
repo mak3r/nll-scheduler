@@ -40,13 +40,6 @@ spec:
     repoURL: https://github.com/mak3r/nll-scheduler
     targetRevision: ${app_version}
     path: k8s/prod
-    kustomize:
-      images:
-        - ghcr.io/mak3r/nll-scheduler/team-service:${image_tag}
-        - ghcr.io/mak3r/nll-scheduler/field-service:${image_tag}
-        - ghcr.io/mak3r/nll-scheduler/schedule-service:${image_tag}
-        - ghcr.io/mak3r/nll-scheduler/scheduler-engine:${image_tag}
-        - ghcr.io/mak3r/nll-scheduler/frontend:${image_tag}
   destination:
     server: https://kubernetes.default.svc
     namespace: nll-scheduler

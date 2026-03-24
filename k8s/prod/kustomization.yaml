@@ -25,12 +25,12 @@ resources:
   - frontend/service.yaml
 images:
   - name: ghcr.io/mak3r/nll-scheduler/team-service
-    newTag: latest
+    newTag: not-yet-built
   - name: ghcr.io/mak3r/nll-scheduler/field-service
-    newTag: latest
+    newTag: not-yet-built
   - name: ghcr.io/mak3r/nll-scheduler/schedule-service
-    newTag: latest
+    newTag: not-yet-built
   - name: ghcr.io/mak3r/nll-scheduler/scheduler-engine
-    newTag: latest
+    newTag: not-yet-built
   - name: ghcr.io/mak3r/nll-scheduler/frontend
-    newTag: latest
+    newTag: not-yet-built

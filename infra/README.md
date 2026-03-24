@@ -15,7 +15,7 @@ Spin up an isolated AWS EC2 instance running k3s + ArgoCD for a usability tester
 - openSUSE Leap Micro 6 aarch64 AMI subscribed in AWS Marketplace for your target region
   - Search AWS Marketplace for: **openSUSE-Leap-Micro-6** — filter by arm64 and your region
   - Subscribe (free) and note the AMI ID
-  - Verify your subscription with a dry-run: `aws ec2 run-instances --image-id <ami-id> --instance-type t4g.small --count 1 --dry-run --region <region>`
+  - Verify your subscription with a dry-run: `aws ec2 run-instances --image-id <ami-id> --instance-type t4g.medium --count 1 --dry-run --region <region>`
   - Expected response: `DryRunOperation: Request would have succeeded` — any other error means the subscription is incomplete
 
 ## Quick Start
@@ -47,7 +47,7 @@ curl http://<public_ip>/api/teams/health
 | `tester_name` | **required** | Label for all AWS resources (e.g. `alex`) |
 | `ami_id` | **required** | openSUSE Leap Micro 6 aarch64 AMI ID for your region |
 | `aws_region` | `us-east-1` | AWS region |
-| `instance_type` | `t4g.small` | ARM64 instance (free-tier eligible first 12 months) |
+| `instance_type` | `t4g.medium` | ARM64 instance, 4GB RAM — required for k3s + all services |
 | `app_version` | `main` | Git branch/tag for manifest version |
 | `image_tag` | `latest` | Container image tag from ghcr.io |
 | `key_name` | `""` | EC2 key pair for SSH (empty = no SSH access) |
@@ -62,7 +62,7 @@ All resources are tagged with `Tester = <tester_name>` for easy identification i
 
 ## Cost
 
-- `t4g.small`: ~$0.017/hr (~$12/mo) — free-tier eligible (750 hr/mo, first 12 months)
+- `t4g.medium`: ~$0.034/hr (~$25/mo)
 - 20 GB gp3 EBS: ~$1.60/mo
 - Data transfer: minimal for usability testing
 
@@ -89,7 +89,7 @@ tofu apply -var-file=morgan.tfvars
 ## Architecture
 
 ```
-EC2 (openSUSE Leap Micro 6, ARM64, t4g.small)
+EC2 (openSUSE Leap Micro 6, ARM64, t4g.medium)
   └── k3s (single-node cluster, traefik disabled)
        ├── ingress-nginx (LoadBalancer → klipper-lb → host port 80)
        ├── argocd (syncs from github.com/mak3r/nll-scheduler, k8s/prod/)

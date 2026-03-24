@@ -15,9 +15,9 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type — t4g.small is ARM-based and free-tier eligible"
+  description = "EC2 instance type — t4g.medium is ARM-based with 4GB RAM, sufficient for k3s + all services"
   type        = string
-  default     = "t4g.small"
+  default     = "t4g.medium"
 }
 
 variable "key_name" {

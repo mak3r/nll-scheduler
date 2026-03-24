@@ -39,6 +39,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     loadInitial()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -51,6 +52,7 @@ export default function SchedulePage() {
     setConflicts(null)
     setSummary(null)
     setEditingGameId(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSeasonId])
 
   async function loadInitial() {

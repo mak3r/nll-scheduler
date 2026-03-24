@@ -278,12 +278,7 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		slots := availMap[f.ID]
 		solverSlots := make([]SolverFieldSlot, len(slots))
 		for j, slot := range slots {
-			solverSlots[j] = SolverFieldSlot{
-				FieldID:   slot.FieldID,
-				Date:      slot.Date,
-				StartTime: slot.StartTime,
-				EndTime:   slot.EndTime,
-			}
+			solverSlots[j] = SolverFieldSlot(slot)
 		}
 		solverFields = append(solverFields, SolverField{
 			ID:             f.ID,

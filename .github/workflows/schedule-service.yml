@@ -29,6 +29,9 @@ jobs:
           go-version-file: schedule-service/go.mod
           cache-dependency-path: schedule-service/go.sum
 
+      - name: Download dependencies
+        run: go mod tidy
+
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:

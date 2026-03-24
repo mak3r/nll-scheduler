@@ -25,7 +25,7 @@ resources:
 - frontend/service.yaml
 images:
 - name: ghcr.io/mak3r/nll-scheduler/field-service
-  newTag: not-yet-built
+  newTag: a8e1ba09ad38dc4b3a63e3780ac6012976ff69b7
 - name: ghcr.io/mak3r/nll-scheduler/frontend
   newTag: not-yet-built
 - name: ghcr.io/mak3r/nll-scheduler/schedule-service

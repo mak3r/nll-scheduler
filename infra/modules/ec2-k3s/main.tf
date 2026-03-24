@@ -15,6 +15,14 @@ resource "aws_security_group" "nll_scheduler" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "SSH - admin access"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     description = "All outbound - required for image pulls and k3s install"
     from_port   = 0

@@ -100,7 +100,7 @@ EC2 (openSUSE Leap Micro 6, ARM64, t4g.medium)
             └── frontend (nginx, static build)
 ```
 
-The only exposed port is **80**. Images are pulled from `ghcr.io/mak3r/nll-scheduler`.
+Exposed ports: **80** (app) and **22** (SSH for debugging — set `key_name` to enable SSH access). Images are pulled from `ghcr.io/mak3r/nll-scheduler`.
 
 ## Troubleshooting
 

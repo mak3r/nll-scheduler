@@ -153,8 +153,8 @@ export default function SchedulePage() {
     const gameB = dayGames[otherIdx]
     try {
       await Promise.all([
-        gamesApi.update(selectedSeasonId, gameA.id, { start_time: gameB.start_time, manually_edited: true }),
-        gamesApi.update(selectedSeasonId, gameB.id, { start_time: gameA.start_time, manually_edited: true }),
+        gamesApi.update(selectedSeasonId, gameA.id, { ...gameA, start_time: gameB.start_time, manually_edited: true }),
+        gamesApi.update(selectedSeasonId, gameB.id, { ...gameB, start_time: gameA.start_time, manually_edited: true }),
       ])
       await loadGames(selectedSeasonId)
     } catch (e) {

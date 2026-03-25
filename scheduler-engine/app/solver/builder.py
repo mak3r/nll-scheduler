@@ -185,10 +185,14 @@ def solve(request: SolveRequest) -> SolveResponse:
             logger.warning("Unknown constraint type: %s — skipping", cfg.type)
 
     # --- Apply built-in defaults if not explicitly configured ---
-    # Always apply these core constraints if not already registered
+    # Always apply these core constraints if not already registered.
+    # max_games_per_team_per_week is intentionally excluded from defaults —
+    # the objective is to maximize field utilization, so weekly caps should
+    # only be imposed when explicitly configured by the user.
     for builtin_type in ("round_robin_matchup", "max_games_per_field_per_day",
-                         "max_games_per_team_per_week", "min_rest_days_between_games",
-                         "no_same_day_repeat_matchup", "prefer_max_one_game_per_day"):
+                         "min_rest_days_between_games",
+                         "no_same_day_repeat_matchup", "prefer_max_one_game_per_day",
+                         "even_home_away_balance"):
         if builtin_type not in registered_types:
             handler = REGISTRY.get(builtin_type)
             if handler:
@@ -207,8 +211,15 @@ def solve(request: SolveRequest) -> SolveResponse:
             model.add(sum(slot_vars) <= 1)
 
     # --- Build objective ---
+    # Primary objective: maximize total games scheduled (= maximize field utilization).
+    # Soft constraint terms (prefer_interleague_dates, even_home_away_balance, etc.)
+    # are weighted at 1 each and added as tie-breakers at 1/1000 the scale of a game.
     obj_terms = variables["objective_terms"]
-    if obj_terms:
+    if x:
+        game_count_term = sum(x.values())
+        soft_bonus = sum(obj_terms) if obj_terms else 0
+        model.maximize(1000 * game_count_term + soft_bonus)
+    elif obj_terms:
         model.maximize(sum(obj_terms))
 
     # --- Solve ---
@@ -248,6 +259,11 @@ def solve(request: SolveRequest) -> SolveResponse:
                 ))
         games.sort(key=lambda g: (str(g.game_date), str(g.start_time)))
 
+    per_team_game_counts: dict[str, int] = {}
+    for g in games:
+        per_team_game_counts[g.home_team_id] = per_team_game_counts.get(g.home_team_id, 0) + 1
+        per_team_game_counts[g.away_team_id] = per_team_game_counts.get(g.away_team_id, 0) + 1
+
     obj_val = None
     try:
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -264,6 +280,7 @@ def solve(request: SolveRequest) -> SolveResponse:
             "num_branches": solver.num_branches,
             "num_games_scheduled": len(games),
             "objective_value": obj_val,
+            "per_team_game_counts": per_team_game_counts,
         },
         unmet_constraints=[],
     )

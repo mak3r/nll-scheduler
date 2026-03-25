@@ -6,11 +6,13 @@ import {
   generationApi,
   seasonBlackoutsApi,
   preferredDatesApi,
+  divisionGamesRequiredApi,
   type Season,
   type SeasonConstraint,
   type SeasonBlackout,
   type PreferredDate,
   type GenerationRun,
+  type DivisionGamesRequired,
 } from '../api/schedule'
 import { divisionsApi, type Division } from '../api/teams'
 
@@ -39,7 +41,7 @@ const CONSTRAINT_TYPES: Record<string, ConstraintDef> = {
     paramFields: [{ key: 'max_games_per_day', label: 'Max Games/Day', type: 'number' }],
   },
   max_games_per_team_per_week: {
-    label: 'Max Games per Team per Week',
+    label: 'Max Games per Team per Week (optional cap)',
     isHard: true,
     defaultWeight: 1,
     defaultParams: { max_games_per_week: 3 },
@@ -107,6 +109,10 @@ export default function SeasonsPage() {
   const [newConstraintType, setNewConstraintType] = useState('round_robin_matchup')
   const [newConstraintParams, setNewConstraintParams] = useState<Record<string, unknown>>({})
 
+  // Division games required
+  const [divGamesReq, setDivGamesReq] = useState<DivisionGamesRequired[]>([])
+  const [editingDivGamesReq, setEditingDivGamesReq] = useState<Record<string, number>>({})
+
   // Generation state
   const [genStatus, setGenStatus] = useState<GenerationRun | null>(null)
   const [genRunId, setGenRunId] = useState<string | null>(null)
@@ -123,6 +129,8 @@ export default function SeasonsPage() {
       setBlackouts([])
       setPreferred([])
       setConstraints([])
+      setDivGamesReq([])
+      setEditingDivGamesReq({})
       setGenStatus(null)
       setGenRunId(null)
     }
@@ -144,18 +152,34 @@ export default function SeasonsPage() {
   async function loadDetail(sid: string) {
     setDetailLoading(true)
     try {
-      const [b, p, c] = await Promise.all([
+      const [b, p, c, dgr] = await Promise.all([
         seasonBlackoutsApi.list(sid),
         preferredDatesApi.list(sid),
         constraintsApi.list(sid),
+        divisionGamesRequiredApi.list(sid),
       ])
       setBlackouts(b)
       setPreferred(p)
       setConstraints(c)
+      setDivGamesReq(dgr)
     } catch (e) {
       setError(String(e))
     } finally {
       setDetailLoading(false)
+    }
+  }
+
+  async function saveDivGamesReq(divisionId: string) {
+    if (!selectedId) return
+    const val = editingDivGamesReq[divisionId]
+    if (val === undefined || val < 1) return
+    try {
+      await divisionGamesRequiredApi.upsert(selectedId, divisionId, val)
+      const dgr = await divisionGamesRequiredApi.list(selectedId)
+      setDivGamesReq(dgr)
+      setEditingDivGamesReq(prev => { const n = { ...prev }; delete n[divisionId]; return n })
+    } catch (e) {
+      setError(String(e))
     }
   }
 
@@ -476,7 +500,19 @@ export default function SeasonsPage() {
                           <span style={{ color: '#721c24', marginLeft: '0.5rem' }}>{genStatus.error_message}</span>
                         )}
                         {genStatus.status === 'success' && (
-                          <span style={{ marginLeft: '0.5rem', color: '#155724' }}>Schedule generated successfully!</span>
+                          <>
+                            <span style={{ marginLeft: '0.5rem', color: '#155724' }}>
+                              Schedule generated successfully!
+                              {genStatus.solver_stats?.num_games_scheduled !== undefined && (
+                                <> {genStatus.solver_stats.num_games_scheduled as number} games scheduled.</>
+                              )}
+                            </span>
+                            {genStatus.error_message && (
+                              <div style={{ color: '#856404', background: '#fff3cd', padding: '0.4rem 0.6rem', borderRadius: 4, marginTop: '0.4rem', border: '1px solid #ffc107' }}>
+                                ⚠ {genStatus.error_message}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -558,6 +594,64 @@ export default function SeasonsPage() {
                       <button type="submit" className="btn btn-primary">Add Date</button>
                     </form>
                   </div>
+
+                  {/* Division Games Required */}
+                  {(selectedSeason.division_ids || []).length > 0 && (
+                    <div className="card">
+                      <h3 style={{ ...subheadStyle, marginTop: 0 }}>Games Required per Division</h3>
+                      <p style={{ color: '#666', fontSize: '0.85rem', marginTop: 0 }}>
+                        Target number of games each team in a division should receive. Defaults to 20.
+                      </p>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left' }}>
+                            <th style={{ padding: '0.3rem 0.5rem', fontSize: '0.9rem' }}>Division</th>
+                            <th style={{ padding: '0.3rem 0.5rem', fontSize: '0.9rem' }}>Games Required</th>
+                            <th style={{ padding: '0.3rem 0.5rem' }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedSeason.division_ids || []).map(divId => {
+                            const existing = divGamesReq.find(d => d.division_id === divId)
+                            const current = existing?.games_required ?? 20
+                            const editing = editingDivGamesReq[divId]
+                            const isEditing = editing !== undefined
+                            return (
+                              <tr key={divId} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                <td style={{ padding: '0.4rem 0.5rem', fontSize: '0.9rem' }}>
+                                  {divisionMap[divId] || divId}
+                                </td>
+                                <td style={{ padding: '0.4rem 0.5rem' }}>
+                                  {isEditing ? (
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={editing}
+                                      onChange={e => setEditingDivGamesReq(prev => ({ ...prev, [divId]: Number(e.target.value) }))}
+                                      style={{ ...inputStyle, width: 80 }}
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span>{current}</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.4rem 0.5rem', display: 'flex', gap: '0.25rem' }}>
+                                  {isEditing ? (
+                                    <>
+                                      <button onClick={() => saveDivGamesReq(divId)} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Save</button>
+                                      <button onClick={() => setEditingDivGamesReq(prev => { const n = { ...prev }; delete n[divId]; return n })} className="btn" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Cancel</button>
+                                    </>
+                                  ) : (
+                                    <button onClick={() => setEditingDivGamesReq(prev => ({ ...prev, [divId]: current }))} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Edit</button>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
                   {/* Constraints */}
                   <div className="card">

@@ -29,7 +29,7 @@ images:
 - name: ghcr.io/mak3r/nll-scheduler/frontend
   newTag: 2251f28469646ef0e0c73a1f6d7f8ea225aeec41
 - name: ghcr.io/mak3r/nll-scheduler/schedule-service
-  newTag: 9e4a820404d137e75fdc032d942c6305379583f1
+  newTag: 2251f28469646ef0e0c73a1f6d7f8ea225aeec41
 - name: ghcr.io/mak3r/nll-scheduler/scheduler-engine
   newTag: 2251f28469646ef0e0c73a1f6d7f8ea225aeec41
 - name: ghcr.io/mak3r/nll-scheduler/team-service

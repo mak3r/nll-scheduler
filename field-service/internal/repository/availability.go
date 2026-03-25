@@ -199,6 +199,38 @@ func (r *AvailabilityRepo) CreateWindow(ctx context.Context, w model.Availabilit
 	return &result, nil
 }
 
+func (r *AvailabilityRepo) UpdateWindow(ctx context.Context, w model.AvailabilityWindow) (*model.AvailabilityWindow, error) {
+	daysOfWeek := make([]int32, len(w.DaysOfWeek))
+	for i, d := range w.DaysOfWeek {
+		daysOfWeek[i] = int32(d)
+	}
+
+	var result model.AvailabilityWindow
+	var resultDays []int32
+	err := r.db.QueryRow(ctx,
+		`UPDATE availability_windows
+		 SET window_type=$1, days_of_week=$2, start_date=$3, end_date=$4, start_time=$5, end_time=$6
+		 WHERE id=$7
+		 RETURNING id, field_id, window_type, days_of_week,
+		           start_date::text, end_date::text, start_time::text, end_time::text, created_at`,
+		w.WindowType, daysOfWeek, w.StartDate, w.EndDate, w.StartTime, w.EndTime, w.ID,
+	).Scan(
+		&result.ID, &result.FieldID, &result.WindowType, &resultDays,
+		&result.StartDate, &result.EndDate, &result.StartTime, &result.EndTime, &result.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	result.DaysOfWeek = make([]int, len(resultDays))
+	for i, d := range resultDays {
+		result.DaysOfWeek[i] = int(d)
+	}
+	return &result, nil
+}
+
 func (r *AvailabilityRepo) DeleteWindow(ctx context.Context, id string) error {
 	var deletedID string
 	err := r.db.QueryRow(ctx,

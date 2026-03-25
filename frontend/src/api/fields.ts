@@ -54,6 +54,11 @@ export const availabilityApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  update: (fieldId: string, windowId: string, data: Omit<AvailabilityWindow, 'id' | 'field_id'>) =>
+    fieldsApi<AvailabilityWindow>(`/fields/${fieldId}/availability-windows/${windowId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   delete: (fieldId: string, windowId: string) =>
     fieldsApi<void>(`/fields/${fieldId}/availability-windows/${windowId}`, { method: 'DELETE' }),
 }

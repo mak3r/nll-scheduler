@@ -47,6 +47,7 @@ func NewRouter(pool *pgxpool.Pool) *chi.Mux {
 			r.Route("/availability-windows", func(r chi.Router) {
 				r.Get("/", h.ListAvailabilityWindows)
 				r.Post("/", h.CreateAvailabilityWindow)
+				r.Put("/{windowID}", h.UpdateAvailabilityWindow)
 				r.Delete("/{windowID}", h.DeleteAvailabilityWindow)
 			})
 			r.Route("/blackout-dates", func(r chi.Router) {
@@ -214,6 +215,28 @@ func (h *Handler) CreateAvailabilityWindow(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusCreated, w2)
+}
+
+func (h *Handler) UpdateAvailabilityWindow(w http.ResponseWriter, r *http.Request) {
+	windowID := chi.URLParam(r, "windowID")
+	fieldID := chi.URLParam(r, "fieldID")
+	var req model.AvailabilityWindow
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.ID = windowID
+	req.FieldID = fieldID
+	updated, err := h.availability.UpdateWindow(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "window not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (h *Handler) DeleteAvailabilityWindow(w http.ResponseWriter, r *http.Request) {

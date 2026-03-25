@@ -7,6 +7,7 @@ import {
   type AvailabilityWindow,
   type BlackoutDate,
 } from '../api/fields'
+import { seasonsApi, type Season } from '../api/schedule'
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -32,6 +33,9 @@ export default function FieldsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const [seasons, setSeasons] = useState<Season[]>([])
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>('')
+
   const [newField, setNewField] = useState({ name: '', address: '', maxGamesPerDay: 4 })
   const [newWindow, setNewWindow] = useState<Record<string, WindowForm>>({})
   const [newBlackout, setNewBlackout] = useState<Record<string, BlackoutForm>>({})
@@ -39,7 +43,12 @@ export default function FieldsPage() {
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
   const [editFieldForm, setEditFieldForm] = useState({ name: '', address: '', maxGamesPerDay: 4, isActive: true })
 
-  useEffect(() => { loadFields() }, [])
+  const [editingWindowId, setEditingWindowId] = useState<string | null>(null)
+  const [editWindowForm, setEditWindowForm] = useState<WindowForm>({
+    windowType: 'recurring', daysOfWeek: [], startDate: '', endDate: '', startTime: '09:00', endTime: '17:00',
+  })
+
+  useEffect(() => { loadFields(); loadSeasons() }, [])
 
   async function loadFields() {
     setLoading(true)
@@ -52,6 +61,17 @@ export default function FieldsPage() {
       setLoading(false)
     }
   }
+
+  async function loadSeasons() {
+    try {
+      const s = await seasonsApi.list()
+      setSeasons(s)
+    } catch {
+      // non-fatal: season selector is a convenience feature
+    }
+  }
+
+  const selectedSeason = seasons.find(s => s.id === selectedSeasonId) ?? null
 
   async function loadFieldDetail(fieldId: string) {
     try {
@@ -131,8 +151,8 @@ export default function FieldsPage() {
     return newWindow[fid] || {
       windowType: 'recurring',
       daysOfWeek: [],
-      startDate: '',
-      endDate: '',
+      startDate: selectedSeason?.start_date ?? '',
+      endDate: selectedSeason?.end_date ?? '',
       startTime: '09:00',
       endTime: '17:00',
     }
@@ -163,6 +183,35 @@ export default function FieldsPage() {
         end_time: form.endTime,
       })
       setNewWindow(prev => { const n = { ...prev }; delete n[fid]; return n })
+      await loadFieldDetail(fid)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  function startEditWindow(w: AvailabilityWindow) {
+    setEditingWindowId(w.id)
+    setEditWindowForm({
+      windowType: w.window_type,
+      daysOfWeek: w.days_of_week,
+      startDate: w.start_date,
+      endDate: w.end_date,
+      startTime: w.start_time,
+      endTime: w.end_time,
+    })
+  }
+
+  async function saveWindow(fid: string, wid: string) {
+    try {
+      await availabilityApi.update(fid, wid, {
+        window_type: editWindowForm.windowType as 'recurring' | 'oneoff',
+        days_of_week: editWindowForm.daysOfWeek,
+        start_date: editWindowForm.startDate,
+        end_date: editWindowForm.endDate,
+        start_time: editWindowForm.startTime,
+        end_time: editWindowForm.endTime,
+      })
+      setEditingWindowId(null)
       await loadFieldDetail(fid)
     } catch (e) {
       setError(String(e))
@@ -218,6 +267,28 @@ export default function FieldsPage() {
   return (
     <div>
       <h1>Fields</h1>
+
+      {seasons.length > 0 && (
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem' }}>
+          <label style={{ fontWeight: 500 }}>Season context for date defaults:</label>
+          <select
+            value={selectedSeasonId}
+            onChange={e => setSelectedSeasonId(e.target.value)}
+            style={{ padding: '0.35rem 0.5rem', borderRadius: 4, border: '1px solid #ccc' }}
+          >
+            <option value="">— none —</option>
+            {seasons.map(s => (
+              <option key={s.id} value={s.id}>{s.name} ({s.start_date} → {s.end_date})</option>
+            ))}
+          </select>
+          {selectedSeason && (
+            <span style={{ color: '#555', fontSize: '0.85rem' }}>
+              Availability windows will default to {selectedSeason.start_date} → {selectedSeason.end_date}
+            </span>
+          )}
+        </div>
+      )}
+
       {error && (
         <div className="card" style={{ background: '#fdd' }}>
           <strong>Error:</strong> {error}
@@ -350,38 +421,60 @@ export default function FieldsPage() {
               )}
 
               {(windows[field.id] || []).map(w => (
-                <div
-                  key={w.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.4rem 0',
-                    borderBottom: '1px solid #f0f0f0',
-                    fontSize: '0.9rem',
-                  }}
-                >
-                  <span>
-                    <strong>{w.window_type}</strong>
-                    {w.window_type === 'recurring' && w.days_of_week.length > 0 && (
-                      <span style={{ marginLeft: '0.5rem', color: '#555' }}>
-                        [{w.days_of_week.map(d => DAYS[d]).join(', ')}]
+                <div key={w.id} style={{ borderBottom: '1px solid #f0f0f0', padding: '0.4rem 0' }}>
+                  {editingWindowId === w.id ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end', background: '#f0f7ff', padding: '0.5rem', borderRadius: 4 }}>
+                      <label style={{ fontSize: '0.85rem' }}>
+                        Type<br />
+                        <select value={editWindowForm.windowType} onChange={e => setEditWindowForm(p => ({ ...p, windowType: e.target.value }))} style={{ padding: '0.35rem', borderRadius: 4, border: '1px solid #ccc' }}>
+                          <option value="recurring">Recurring</option>
+                          <option value="oneoff">One-off</option>
+                        </select>
+                      </label>
+                      {editWindowForm.windowType === 'recurring' && (
+                        <label style={{ fontSize: '0.85rem' }}>
+                          Days<br />
+                          <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+                            {DAYS.map((d, i) => (
+                              <label key={i} style={{ fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <input type="checkbox" checked={editWindowForm.daysOfWeek.includes(i)} onChange={() => setEditWindowForm(p => ({ ...p, daysOfWeek: p.daysOfWeek.includes(i) ? p.daysOfWeek.filter(x => x !== i) : [...p.daysOfWeek, i] }))} />
+                                {d}
+                              </label>
+                            ))}
+                          </div>
+                        </label>
+                      )}
+                      <label style={{ fontSize: '0.85rem' }}>Start Date<br /><input type="date" value={editWindowForm.startDate} onChange={e => setEditWindowForm(p => ({ ...p, startDate: e.target.value }))} style={{ padding: '0.35rem', borderRadius: 4, border: '1px solid #ccc' }} /></label>
+                      <label style={{ fontSize: '0.85rem' }}>End Date<br /><input type="date" value={editWindowForm.endDate} onChange={e => setEditWindowForm(p => ({ ...p, endDate: e.target.value }))} style={{ padding: '0.35rem', borderRadius: 4, border: '1px solid #ccc' }} /></label>
+                      <label style={{ fontSize: '0.85rem' }}>Start Time<br /><input type="time" value={editWindowForm.startTime} onChange={e => setEditWindowForm(p => ({ ...p, startTime: e.target.value }))} style={{ padding: '0.35rem', borderRadius: 4, border: '1px solid #ccc' }} /></label>
+                      <label style={{ fontSize: '0.85rem' }}>End Time<br /><input type="time" value={editWindowForm.endTime} onChange={e => setEditWindowForm(p => ({ ...p, endTime: e.target.value }))} style={{ padding: '0.35rem', borderRadius: 4, border: '1px solid #ccc' }} /></label>
+                      <div style={{ display: 'flex', gap: '0.25rem', alignSelf: 'flex-end' }}>
+                        <button onClick={() => saveWindow(field.id, w.id)} className="btn btn-primary" style={{ fontSize: '0.8rem' }}>Save</button>
+                        <button onClick={() => setEditingWindowId(null)} className="btn" style={{ fontSize: '0.8rem' }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
+                      <span>
+                        <strong>{w.window_type}</strong>
+                        {w.window_type === 'recurring' && w.days_of_week.length > 0 && (
+                          <span style={{ marginLeft: '0.5rem', color: '#555' }}>
+                            [{w.days_of_week.map(d => DAYS[d]).join(', ')}]
+                          </span>
+                        )}
+                        <span style={{ marginLeft: '0.5rem' }}>
+                          {w.start_date} &rarr; {w.end_date}
+                        </span>
+                        <span style={{ marginLeft: '0.5rem', color: '#555' }}>
+                          {w.start_time} &ndash; {w.end_time}
+                        </span>
                       </span>
-                    )}
-                    <span style={{ marginLeft: '0.5rem' }}>
-                      {w.start_date} &rarr; {w.end_date}
-                    </span>
-                    <span style={{ marginLeft: '0.5rem', color: '#555' }}>
-                      {w.start_time} &ndash; {w.end_time}
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => deleteWindow(field.id, w.id)}
-                    className="btn btn-danger"
-                    style={{ fontSize: '0.8rem', padding: '2px 10px' }}
-                  >
-                    Delete
-                  </button>
+                      <div style={{ display: 'flex', gap: '0.25rem' }}>
+                        <button onClick={() => startEditWindow(w)} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Edit</button>
+                        <button onClick={() => deleteWindow(field.id, w.id)} className="btn btn-danger" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Delete</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
 

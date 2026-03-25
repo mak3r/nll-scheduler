@@ -1,19 +1,19 @@
 import { teamsApi, fieldsApi, scheduleApi } from './client'
 
 export interface TeamsBundle {
-  divisions: unknown[]
-  teams: unknown[]
+  divisions: { id: string; name: string }[]
+  teams: { id: string; name: string }[]
   matchup_rules: unknown[]
 }
 
 export interface FieldsBundle {
-  fields: unknown[]
+  fields: { id: string; name: string }[]
   availability_windows: unknown[]
   blackout_dates: unknown[]
 }
 
 export interface ScheduleBundle {
-  seasons: unknown[]
+  seasons: { id: string; name: string }[]
 }
 
 export interface FullBundle {

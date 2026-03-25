@@ -42,16 +42,18 @@ export default function AdminPage() {
       if (bundle.version !== '1') {
         throw new Error(`Unknown bundle version: ${bundle.version}`)
       }
-      const teamCount = bundle.teams.teams.length
-      const fieldCount = bundle.fields.fields.length
-      const seasonCount = bundle.schedule.seasons.length
+      const divisionNames = bundle.teams.divisions.map(d => d.name).join(', ')
+      const teamNames = bundle.teams.teams.map(t => t.name).join(', ')
+      const fieldNames = bundle.fields.fields.map(f => f.name).join(', ')
+      const seasonNames = bundle.schedule.seasons.map(s => s.name).join(', ')
       if (
         !confirm(
           `Import bundle from ${bundle.exported_at}?\n\n` +
             `This will upsert:\n` +
-            `  ${bundle.teams.divisions.length} divisions, ${teamCount} teams\n` +
-            `  ${fieldCount} fields\n` +
-            `  ${seasonCount} seasons\n\n` +
+            `  Divisions (${bundle.teams.divisions.length}): ${divisionNames}\n` +
+            `  Teams (${bundle.teams.teams.length}): ${teamNames}\n` +
+            `  Fields (${bundle.fields.fields.length}): ${fieldNames}\n` +
+            `  Seasons (${bundle.schedule.seasons.length}): ${seasonNames}\n\n` +
             `Existing records with the same ID will be overwritten.`,
         )
       ) {
@@ -61,7 +63,10 @@ export default function AdminPage() {
       }
       await adminApi.importAll(bundle)
       setImportSuccess(
-        `Import complete: ${bundle.teams.divisions.length} divisions, ${teamCount} teams, ${fieldCount} fields, ${seasonCount} seasons.`,
+        `Import complete:\n` +
+          `  Divisions: ${divisionNames}\n` +
+          `  Fields: ${fieldNames}\n` +
+          `  Seasons: ${seasonNames}`,
       )
       setImportStatus('success')
     } catch (err) {

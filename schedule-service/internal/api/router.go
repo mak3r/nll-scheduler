@@ -143,12 +143,38 @@ func (h *Handler) GetSeason(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) UpdateSeason(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "seasonID")
-	var req model.Season
+	var req struct {
+		Name        *string  `json:"name"`
+		StartDate   *string  `json:"start_date"`
+		EndDate     *string  `json:"end_date"`
+		DivisionIDs []string `json:"division_ids"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	s, err := h.seasons.Update(r.Context(), id, req)
+	existing, err := h.seasons.Get(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "season not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+	if req.StartDate != nil {
+		existing.StartDate = *req.StartDate
+	}
+	if req.EndDate != nil {
+		existing.EndDate = *req.EndDate
+	}
+	if req.DivisionIDs != nil {
+		existing.DivisionIDs = req.DivisionIDs
+	}
+	s, err := h.seasons.Update(r.Context(), id, *existing)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "season not found")

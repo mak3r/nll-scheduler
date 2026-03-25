@@ -14,7 +14,8 @@ import {
   type GenerationRun,
   type DivisionGamesRequired,
 } from '../api/schedule'
-import { divisionsApi, type Division } from '../api/teams'
+import { divisionsApi, teamsApiClient, type Division, type Team } from '../api/teams'
+import { fieldsApiClient, type Field } from '../api/fields'
 
 // Constraint type definitions
 interface ConstraintDef {
@@ -81,6 +82,8 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 export default function SeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>([])
   const [divisions, setDivisions] = useState<Division[]>([])
+  const [allFields, setAllFields] = useState<Field[]>([])
+  const [allTeams, setAllTeams] = useState<Team[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -143,9 +146,11 @@ export default function SeasonsPage() {
   async function loadInitial() {
     setLoading(true)
     try {
-      const [s, d] = await Promise.all([seasonsApi.list(), divisionsApi.list()])
+      const [s, d, f, t] = await Promise.all([seasonsApi.list(), divisionsApi.list(), fieldsApiClient.list(), teamsApiClient.list()])
       setSeasons(s)
       setDivisions(d)
+      setAllFields(f)
+      setAllTeams(t)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -365,6 +370,33 @@ export default function SeasonsPage() {
   const selectedSeason = seasons.find(s => s.id === selectedId)
   const divisionMap: Record<string, string> = {}
   for (const d of divisions) divisionMap[d.id] = d.name
+  const fieldMap: Record<string, string> = {}
+  for (const f of allFields) fieldMap[f.id] = f.name
+  const teamMap: Record<string, string> = {}
+  for (const t of allTeams) teamMap[t.id] = t.name
+
+  function renderConstraintParams(params: Record<string, unknown>): string {
+    const parts: string[] = []
+    for (const [k, v] of Object.entries(params)) {
+      if (k === 'auto_injected') continue
+      if (k === 'division_preferred_fields' && typeof v === 'object' && v !== null) {
+        const entries = Object.entries(v as Record<string, string[]>).map(([divId, fieldIds]) => {
+          const divName = divisionMap[divId] ?? divId
+          const fieldNames = (fieldIds as string[]).map(fid => fieldMap[fid] ?? fid).join(', ')
+          return `${divName} → ${fieldNames}`
+        })
+        parts.push(entries.join('; '))
+      } else if (k === 'team_home_fields' && typeof v === 'object' && v !== null) {
+        const entries = Object.entries(v as Record<string, string>).map(([teamId, fieldId]) =>
+          `${teamMap[teamId] ?? teamId} → ${fieldMap[fieldId] ?? fieldId}`
+        )
+        parts.push(entries.join('; '))
+      } else {
+        parts.push(`${k}: ${JSON.stringify(v)}`)
+      }
+    }
+    return parts.join(', ')
+  }
 
   const inputStyle: React.CSSProperties = { padding: '0.4rem', borderRadius: 4, border: '1px solid #ccc' }
   const rowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: '1px solid #f0f0f0', fontSize: '0.9rem' }
@@ -798,7 +830,7 @@ export default function SeasonsPage() {
                             </span>
                             {displayParams.length > 0 && (
                               <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem', color: '#555' }}>
-                                {displayParams.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}
+                                {renderConstraintParams(c.params)}
                               </span>
                             )}
                           </div>

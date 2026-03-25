@@ -145,7 +145,7 @@ func (r *FieldRepo) Upsert(ctx context.Context, f model.Field) error {
 func (r *FieldRepo) Delete(ctx context.Context, id string) error {
 	var deletedID string
 	err := r.db.QueryRow(ctx,
-		`UPDATE fields SET is_active=false, updated_at=NOW() WHERE id=$1 RETURNING id`,
+		`DELETE FROM fields WHERE id=$1 RETURNING id`,
 		id,
 	).Scan(&deletedID)
 	if err != nil {

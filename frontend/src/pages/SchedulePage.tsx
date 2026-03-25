@@ -1,8 +1,8 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  seasonsApi, gamesApi,
-  type Season, type Game, type GamesSummaryResponse,
+  seasonsApi, gamesApi, constraintsApi, seasonBlackoutsApi,
+  type Season, type Game, type GamesSummaryResponse, type SeasonConstraint, type SeasonBlackout,
 } from '../api/schedule'
 import { teamsApiClient, divisionsApi, type Team, type Division } from '../api/teams'
 import { fieldsApiClient, type Field } from '../api/fields'
@@ -12,6 +12,14 @@ interface EditForm {
   start_time: string
   field_id: string
   status: string
+}
+
+interface AddForm {
+  division_id: string
+  home_team_id: string
+  away_team_id: string
+  field_id: string
+  start_time: string
 }
 
 export default function SchedulePage() {
@@ -37,6 +45,18 @@ export default function SchedulePage() {
   const [summary, setSummary] = useState<GamesSummaryResponse | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
 
+  // #28 constraints, #30 blackouts
+  const [constraints, setConstraints] = useState<SeasonConstraint[]>([])
+  const [seasonBlackouts, setSeasonBlackouts] = useState<SeasonBlackout[]>([])
+  const [showConstraints, setShowConstraints] = useState(false)
+
+  // #32 sort toggle
+  const [sortOrder, setSortOrder] = useState<'time' | 'division'>('time')
+
+  // #29 add game
+  const [addingGameDate, setAddingGameDate] = useState<string | null>(null)
+  const [addForm, setAddForm] = useState<AddForm>({ division_id: '', home_team_id: '', away_team_id: '', field_id: '', start_time: '' })
+
   useEffect(() => {
     loadInitial()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -46,12 +66,16 @@ export default function SchedulePage() {
     if (selectedSeasonId) {
       setSearchParams({ season: selectedSeasonId })
       loadGames(selectedSeasonId)
+      loadSeasonDetail(selectedSeasonId)
     } else {
       setGames([])
+      setConstraints([])
+      setSeasonBlackouts([])
     }
     setConflicts(null)
     setSummary(null)
     setEditingGameId(null)
+    setAddingGameDate(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSeasonId])
 
@@ -98,6 +122,19 @@ export default function SchedulePage() {
       setError(String(e))
     } finally {
       setGamesLoading(false)
+    }
+  }
+
+  async function loadSeasonDetail(seasonId: string) {
+    try {
+      const [c, b] = await Promise.all([
+        constraintsApi.list(seasonId),
+        seasonBlackoutsApi.list(seasonId),
+      ])
+      setConstraints(c)
+      setSeasonBlackouts(b)
+    } catch (e) {
+      setError(String(e))
     }
   }
 
@@ -236,6 +273,26 @@ export default function SchedulePage() {
     URL.revokeObjectURL(url)
   }
 
+  async function createGame() {
+    if (!selectedSeasonId || !addingGameDate) return
+    if (!addForm.home_team_id || !addForm.away_team_id || !addForm.field_id || !addForm.start_time || !addForm.division_id) return
+    try {
+      const created = await gamesApi.create(selectedSeasonId, {
+        home_team_id: addForm.home_team_id,
+        away_team_id: addForm.away_team_id,
+        field_id: addForm.field_id,
+        game_date: addingGameDate,
+        start_time: addForm.start_time,
+        division_id: addForm.division_id,
+      })
+      setGames(prev => [...prev, created])
+      setAddingGameDate(null)
+      setAddForm({ division_id: '', home_team_id: '', away_team_id: '', field_id: '', start_time: '' })
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   // Group games by date
   const gamesByDate = games.reduce<Record<string, Game[]>>((acc, game) => {
     const d = game.game_date
@@ -244,10 +301,33 @@ export default function SchedulePage() {
     return acc
   }, {})
 
+  // Sort within each date: by division name then time, or just time
+  for (const date of Object.keys(gamesByDate)) {
+    gamesByDate[date].sort((a, b) => {
+      if (sortOrder === 'division') {
+        const divA = divisions[a.division_id]?.name ?? ''
+        const divB = divisions[b.division_id]?.name ?? ''
+        if (divA !== divB) return divA.localeCompare(divB)
+      }
+      return a.start_time.localeCompare(b.start_time)
+    })
+  }
+
   const sortedDates = Object.keys(gamesByDate).sort()
 
-  // Detect teams playing more than once on the same day (double-headers)
-  const doubleHeaderKeys = new Set<string>() // `${date}:${teamId}`
+  // Merged date list for time-first view (game days + blackout days)
+  const blackoutDateSet = new Set(seasonBlackouts.map(b => b.blackout_date))
+  const allDates = Array.from(new Set([...sortedDates, ...Array.from(blackoutDateSet)])).sort()
+
+  // Division order for division-first view
+  const selectedSeason = seasons.find(s => s.id === selectedSeasonId)
+  const orderedDivisions = (selectedSeason?.division_ids ?? [])
+    .map(id => divisions[id])
+    .filter((d): d is Division => !!d)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  // Double-header detection
+  const doubleHeaderKeys = new Set<string>()
   for (const date of sortedDates) {
     const counts: Record<string, number> = {}
     for (const g of gamesByDate[date]) {
@@ -259,6 +339,7 @@ export default function SchedulePage() {
       if (n > 1) doubleHeaderKeys.add(`${date}:${teamId}`)
     }
   }
+
   function isDoubleHeader(game: Game) {
     return doubleHeaderKeys.has(`${game.game_date}:${game.home_team_id}`) ||
            doubleHeaderKeys.has(`${game.game_date}:${game.away_team_id}`)
@@ -269,7 +350,305 @@ export default function SchedulePage() {
 
   if (loading) return <div className="card"><p>Loading...</p></div>
 
-  const selectedSeason = seasons.find(s => s.id === selectedSeasonId)
+  // Teams in the currently selected division for the add-game form
+  const addFormTeams = addForm.division_id
+    ? Object.values(teams).filter(t => t.division_id === addForm.division_id)
+    : []
+
+  function renderGameTable(dateGames: Game[], date: string) {
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', color: '#555' }}>
+            <th style={tdStyle}>Time</th>
+            <th style={tdStyle}>Division</th>
+            <th style={tdStyle}>Home</th>
+            <th style={tdStyle}>Away</th>
+            <th style={tdStyle}>Field</th>
+            <th style={tdStyle}>Status</th>
+            <th style={tdStyle}>Type</th>
+            <th style={tdStyle}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {dateGames.map((game, idx) => (
+            <Fragment key={game.id}>
+              <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                <td style={tdStyle}>{game.start_time}</td>
+                <td style={{ ...tdStyle, color: '#555', fontSize: '0.83rem' }}>
+                  {divisions[game.division_id]?.name ?? game.division_id ?? '—'}
+                </td>
+                <td style={tdStyle}>
+                  {doubleHeaderKeys.has(`${game.game_date}:${game.home_team_id}`)
+                    ? <span style={{ background: '#fff3cd', borderRadius: 3, padding: '0 3px' }} title="Plays twice today">{teams[game.home_team_id]?.name || game.home_team_id}</span>
+                    : (teams[game.home_team_id]?.name || game.home_team_id)
+                  }
+                </td>
+                <td style={tdStyle}>
+                  {doubleHeaderKeys.has(`${game.game_date}:${game.away_team_id}`)
+                    ? <span style={{ background: '#fff3cd', borderRadius: 3, padding: '0 3px' }} title="Plays twice today">{teams[game.away_team_id]?.name || game.away_team_id}</span>
+                    : (teams[game.away_team_id]?.name || game.away_team_id)
+                  }
+                </td>
+                <td style={tdStyle}>{fields[game.field_id]?.name || game.field_id}</td>
+                <td style={tdStyle}>
+                  <span style={{
+                    background:
+                      game.status === 'scheduled' ? '#e8f4f8'
+                      : game.status === 'completed' ? '#d4edda'
+                      : '#f8d7da',
+                    color:
+                      game.status === 'scheduled' ? '#1a5276'
+                      : game.status === 'completed' ? '#155724'
+                      : '#721c24',
+                    padding: '1px 8px',
+                    borderRadius: 10,
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                  }}>
+                    {game.status}
+                  </span>
+                  {game.manually_edited && (
+                    <span style={{ marginLeft: 4, fontSize: '0.73rem', color: '#888' }} title="Manually edited">✎</span>
+                  )}
+                </td>
+                <td style={tdStyle}>
+                  {game.is_interleague && (
+                    <span style={{ background: '#e8f4f8', color: '#1a5276', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem' }}>
+                      interleague
+                    </span>
+                  )}
+                  {isDoubleHeader(game) && (
+                    <span style={{ background: '#fff3cd', color: '#856404', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', marginLeft: game.is_interleague ? 4 : 0 }} title="Team(s) play twice today">
+                      double-header
+                    </span>
+                  )}
+                </td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                  {editingGameId !== game.id && sortOrder === 'time' && (
+                    <>
+                      <button
+                        onClick={() => moveGame(date, idx, 'up')}
+                        disabled={idx === 0}
+                        className="btn"
+                        style={{ fontSize: '0.75rem', padding: '1px 6px', marginRight: 2, opacity: idx === 0 ? 0.3 : 1 }}
+                        title="Move earlier"
+                      >↑</button>
+                      <button
+                        onClick={() => moveGame(date, idx, 'down')}
+                        disabled={idx === dateGames.length - 1}
+                        className="btn"
+                        style={{ fontSize: '0.75rem', padding: '1px 6px', marginRight: 4, opacity: idx === dateGames.length - 1 ? 0.3 : 1 }}
+                        title="Move later"
+                      >↓</button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => editingGameId === game.id ? cancelEdit() : startEdit(game)}
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.78rem', padding: '2px 10px', marginRight: 4 }}
+                  >
+                    {editingGameId === game.id ? 'Cancel' : 'Edit'}
+                  </button>
+                  <button
+                    onClick={() => deleteGame(game.id)}
+                    className="btn btn-danger"
+                    style={{ fontSize: '0.78rem', padding: '2px 10px' }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+
+              {editingGameId === game.id && (
+                <tr style={{ background: '#f0f4f8' }}>
+                  <td colSpan={8} style={{ padding: '0.75rem 0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      <label style={{ fontSize: '0.85rem' }}>
+                        Date<br />
+                        <input
+                          type="date"
+                          value={editForm.game_date}
+                          onChange={e => setEditForm(p => ({ ...p, game_date: e.target.value }))}
+                          style={inputStyle}
+                        />
+                      </label>
+                      <label style={{ fontSize: '0.85rem' }}>
+                        Time<br />
+                        <input
+                          type="time"
+                          value={editForm.start_time}
+                          onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))}
+                          style={inputStyle}
+                        />
+                      </label>
+                      <label style={{ fontSize: '0.85rem' }}>
+                        Field<br />
+                        <select
+                          value={editForm.field_id}
+                          onChange={e => setEditForm(p => ({ ...p, field_id: e.target.value }))}
+                          style={inputStyle}
+                        >
+                          {Object.values(fields).map(f => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label style={{ fontSize: '0.85rem' }}>
+                        Status<br />
+                        <select
+                          value={editForm.status}
+                          onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}
+                          style={inputStyle}
+                        >
+                          <option value="scheduled">Scheduled</option>
+                          <option value="cancelled">Cancelled</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                      </label>
+                      <button onClick={() => saveEdit(game.id)} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
+                        Save
+                      </button>
+                      <button onClick={cancelEdit} className="btn" style={{ fontSize: '0.85rem', background: '#eee' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
+
+  function renderDateCard(date: string, dateGames: Game[], isBlackout: boolean, defaultDivisionId?: string) {
+    const isGameDay = dateGames.length > 0
+    const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    const isAddingHere = addingGameDate === date
+
+    if (!isGameDay && isBlackout) {
+      return (
+        <div key={date} className="card" style={{ padding: '0.75rem 1.5rem', background: '#fff8e1', borderLeft: '4px solid #ffc107' }}>
+          <span style={{ fontSize: '0.9rem', color: '#856404', fontWeight: 600 }}>{formattedDate}</span>
+          <span style={{ marginLeft: '0.75rem', background: '#ffc107', color: '#333', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', fontWeight: 600 }}>blackout</span>
+        </div>
+      )
+    }
+
+    return (
+      <div key={date} className="card" style={{ padding: '1rem 1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+          <h3 style={{ margin: 0, color: '#1a5276', fontSize: '1rem' }}>
+            {formattedDate}
+            <span style={{ fontWeight: 400, color: '#888', marginLeft: '0.5rem', fontSize: '0.85rem' }}>
+              ({dateGames.length} game{dateGames.length !== 1 ? 's' : ''})
+            </span>
+            {isBlackout && (
+              <span style={{ marginLeft: '0.5rem', background: '#ffc107', color: '#333', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem' }}>blackout</span>
+            )}
+          </h3>
+          {selectedSeasonId && (
+            <button
+              onClick={() => {
+                if (isAddingHere) {
+                  setAddingGameDate(null)
+                } else {
+                  setAddingGameDate(date)
+                  setAddForm({ division_id: defaultDivisionId ?? '', home_team_id: '', away_team_id: '', field_id: '', start_time: '' })
+                }
+              }}
+              className="btn btn-primary"
+              style={{ fontSize: '0.78rem', padding: '2px 10px' }}
+            >
+              {isAddingHere ? 'Cancel' : '+ Add Game'}
+            </button>
+          )}
+        </div>
+
+        {renderGameTable(dateGames, date)}
+
+        {isAddingHere && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f0f4f8', borderRadius: 6 }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <label style={{ fontSize: '0.85rem' }}>
+                Division<br />
+                <select
+                  value={addForm.division_id}
+                  onChange={e => setAddForm(p => ({ ...p, division_id: e.target.value, home_team_id: '', away_team_id: '' }))}
+                  style={inputStyle}
+                >
+                  <option value="">— Select —</option>
+                  {Object.values(divisions).sort((a, b) => a.name.localeCompare(b.name)).map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ fontSize: '0.85rem' }}>
+                Home Team<br />
+                <select
+                  value={addForm.home_team_id}
+                  onChange={e => setAddForm(p => ({ ...p, home_team_id: e.target.value }))}
+                  style={inputStyle}
+                  disabled={!addForm.division_id}
+                >
+                  <option value="">— Select —</option>
+                  {addFormTeams.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ fontSize: '0.85rem' }}>
+                Away Team<br />
+                <select
+                  value={addForm.away_team_id}
+                  onChange={e => setAddForm(p => ({ ...p, away_team_id: e.target.value }))}
+                  style={inputStyle}
+                  disabled={!addForm.division_id}
+                >
+                  <option value="">— Select —</option>
+                  {addFormTeams.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ fontSize: '0.85rem' }}>
+                Field<br />
+                <select
+                  value={addForm.field_id}
+                  onChange={e => setAddForm(p => ({ ...p, field_id: e.target.value }))}
+                  style={inputStyle}
+                >
+                  <option value="">— Select —</option>
+                  {Object.values(fields).map(f => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ fontSize: '0.85rem' }}>
+                Time<br />
+                <input
+                  type="time"
+                  value={addForm.start_time}
+                  onChange={e => setAddForm(p => ({ ...p, start_time: e.target.value }))}
+                  style={inputStyle}
+                />
+              </label>
+              <button
+                onClick={createGame}
+                className="btn btn-primary"
+                style={{ fontSize: '0.85rem' }}
+                disabled={!addForm.home_team_id || !addForm.away_team_id || !addForm.field_id || !addForm.start_time}
+              >
+                Add Game
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -301,6 +680,19 @@ export default function SchedulePage() {
 
           {selectedSeasonId && (
             <>
+              <label>
+                <strong>View</strong><br />
+                <div style={{ display: 'flex', borderRadius: 4, overflow: 'hidden', border: '1px solid #ccc' }}>
+                  <button
+                    onClick={() => setSortOrder('time')}
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem', border: 'none', cursor: 'pointer', background: sortOrder === 'time' ? '#1a5276' : '#fff', color: sortOrder === 'time' ? '#fff' : '#333' }}
+                  >By Time</button>
+                  <button
+                    onClick={() => setSortOrder('division')}
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem', border: 'none', borderLeft: '1px solid #ccc', cursor: 'pointer', background: sortOrder === 'division' ? '#1a5276' : '#fff', color: sortOrder === 'division' ? '#fff' : '#333' }}
+                  >By Division</button>
+                </div>
+              </label>
               <button onClick={checkConflicts} className="btn btn-primary" disabled={conflictsLoading} style={{ fontSize: '0.85rem' }}>
                 {conflictsLoading ? 'Checking…' : 'Check Conflicts'}
               </button>
@@ -325,6 +717,41 @@ export default function SchedulePage() {
           </div>
         )}
       </div>
+
+      {/* Constraints panel (#28) */}
+      {selectedSeasonId && constraints.length > 0 && (
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <strong style={{ fontSize: '0.95rem' }}>Constraints ({constraints.length})</strong>
+            <button
+              onClick={() => setShowConstraints(p => !p)}
+              className="btn"
+              style={{ fontSize: '0.8rem', padding: '2px 10px', background: '#eee' }}
+            >
+              {showConstraints ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showConstraints && (
+            <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              {constraints.map(c => {
+                const isAuto = c.params.auto_injected === true
+                return (
+                  <div key={c.id} style={{ fontSize: '0.85rem', opacity: isAuto ? 0.7 : 1 }}>
+                    <strong>{c.type.replace(/_/g, ' ')}</strong>
+                    {isAuto && <span style={{ marginLeft: '0.4rem', background: '#e9ecef', color: '#555', padding: '1px 6px', borderRadius: 10, fontSize: '0.72rem' }}>auto</span>}
+                    <span style={{
+                      marginLeft: '0.4rem',
+                      background: c.is_hard ? '#fde8d8' : '#e8f4d8',
+                      color: c.is_hard ? '#8b3a0a' : '#2e5e0a',
+                      padding: '1px 6px', borderRadius: 10, fontSize: '0.72rem',
+                    }}>{c.is_hard ? 'hard' : `soft w=${c.weight}`}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Conflicts panel */}
       {conflicts !== null && (
@@ -374,197 +801,66 @@ export default function SchedulePage() {
         </div>
       )}
 
-      {/* Games table */}
+      {/* Empty states */}
       {!selectedSeasonId && (
         <div className="card">
           <p className="placeholder">Select a season above to view its schedule.</p>
         </div>
       )}
-
       {selectedSeasonId && gamesLoading && (
         <div className="card"><p>Loading games…</p></div>
       )}
-
-      {selectedSeasonId && !gamesLoading && games.length === 0 && (
+      {selectedSeasonId && !gamesLoading && games.length === 0 && seasonBlackouts.length === 0 && (
         <div className="card">
           <p className="placeholder">No games scheduled yet. Generate a schedule from the Seasons page.</p>
         </div>
       )}
 
-      {selectedSeasonId && !gamesLoading && sortedDates.map(date => (
-        <div key={date} className="card" style={{ padding: '1rem 1.5rem' }}>
-          <h3 style={{ margin: '0 0 0.5rem', color: '#1a5276', fontSize: '1rem' }}>
-            {new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            <span style={{ fontWeight: 400, color: '#888', marginLeft: '0.5rem', fontSize: '0.85rem' }}>
-              ({gamesByDate[date].length} game{gamesByDate[date].length !== 1 ? 's' : ''})
-            </span>
-          </h3>
+      {/* Time-first view: date cards interleaved with blackout cards (#30) */}
+      {selectedSeasonId && !gamesLoading && sortOrder === 'time' && allDates.map(date => {
+        const dateGames = gamesByDate[date] ?? []
+        const isBlackout = blackoutDateSet.has(date)
+        return renderDateCard(date, dateGames, isBlackout)
+      })}
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', color: '#555' }}>
-                <th style={tdStyle}>Time</th>
-                <th style={tdStyle}>Division</th>
-                <th style={tdStyle}>Home</th>
-                <th style={tdStyle}>Away</th>
-                <th style={tdStyle}>Field</th>
-                <th style={tdStyle}>Status</th>
-                <th style={tdStyle}>Type</th>
-                <th style={tdStyle}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {gamesByDate[date].map((game, idx) => (
-                <Fragment key={game.id}>
-                  <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                    <td style={tdStyle}>{game.start_time}</td>
-                    <td style={{ ...tdStyle, color: '#555', fontSize: '0.83rem' }}>
-                      {divisions[game.division_id]?.name ?? game.division_id ?? '—'}
-                    </td>
-                    <td style={tdStyle}>
-                      {doubleHeaderKeys.has(`${game.game_date}:${game.home_team_id}`)
-                        ? <span style={{ background: '#fff3cd', borderRadius: 3, padding: '0 3px' }} title="Plays twice today">{teams[game.home_team_id]?.name || game.home_team_id}</span>
-                        : (teams[game.home_team_id]?.name || game.home_team_id)
-                      }
-                    </td>
-                    <td style={tdStyle}>
-                      {doubleHeaderKeys.has(`${game.game_date}:${game.away_team_id}`)
-                        ? <span style={{ background: '#fff3cd', borderRadius: 3, padding: '0 3px' }} title="Plays twice today">{teams[game.away_team_id]?.name || game.away_team_id}</span>
-                        : (teams[game.away_team_id]?.name || game.away_team_id)
-                      }
-                    </td>
-                    <td style={tdStyle}>{fields[game.field_id]?.name || game.field_id}</td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        background:
-                          game.status === 'scheduled' ? '#e8f4f8'
-                          : game.status === 'completed' ? '#d4edda'
-                          : '#f8d7da',
-                        color:
-                          game.status === 'scheduled' ? '#1a5276'
-                          : game.status === 'completed' ? '#155724'
-                          : '#721c24',
-                        padding: '1px 8px',
-                        borderRadius: 10,
-                        fontSize: '0.78rem',
-                        fontWeight: 600,
-                      }}>
-                        {game.status}
-                      </span>
-                      {game.manually_edited && (
-                        <span style={{ marginLeft: 4, fontSize: '0.73rem', color: '#888' }} title="Manually edited">✎</span>
-                      )}
-                    </td>
-                    <td style={tdStyle}>
-                      {game.is_interleague && (
-                        <span style={{ background: '#e8f4f8', color: '#1a5276', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem' }}>
-                          interleague
-                        </span>
-                      )}
-                      {isDoubleHeader(game) && (
-                        <span style={{ background: '#fff3cd', color: '#856404', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', marginLeft: game.is_interleague ? 4 : 0 }} title="Team(s) play twice today">
-                          double-header
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      {editingGameId !== game.id && (
-                        <>
-                          <button
-                            onClick={() => moveGame(date, idx, 'up')}
-                            disabled={idx === 0}
-                            className="btn"
-                            style={{ fontSize: '0.75rem', padding: '1px 6px', marginRight: 2, opacity: idx === 0 ? 0.3 : 1 }}
-                            title="Move earlier"
-                          >↑</button>
-                          <button
-                            onClick={() => moveGame(date, idx, 'down')}
-                            disabled={idx === gamesByDate[date].length - 1}
-                            className="btn"
-                            style={{ fontSize: '0.75rem', padding: '1px 6px', marginRight: 4, opacity: idx === gamesByDate[date].length - 1 ? 0.3 : 1 }}
-                            title="Move later"
-                          >↓</button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => editingGameId === game.id ? cancelEdit() : startEdit(game)}
-                        className="btn btn-primary"
-                        style={{ fontSize: '0.78rem', padding: '2px 10px', marginRight: 4 }}
-                      >
-                        {editingGameId === game.id ? 'Cancel' : 'Edit'}
-                      </button>
-                      <button
-                        onClick={() => deleteGame(game.id)}
-                        className="btn btn-danger"
-                        style={{ fontSize: '0.78rem', padding: '2px 10px' }}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-
-                  {editingGameId === game.id && (
-                    <tr style={{ background: '#f0f4f8' }}>
-                      <td colSpan={8} style={{ padding: '0.75rem 0.5rem' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                          <label style={{ fontSize: '0.85rem' }}>
-                            Date<br />
-                            <input
-                              type="date"
-                              value={editForm.game_date}
-                              onChange={e => setEditForm(p => ({ ...p, game_date: e.target.value }))}
-                              style={inputStyle}
-                            />
-                          </label>
-                          <label style={{ fontSize: '0.85rem' }}>
-                            Time<br />
-                            <input
-                              type="time"
-                              value={editForm.start_time}
-                              onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))}
-                              style={inputStyle}
-                            />
-                          </label>
-                          <label style={{ fontSize: '0.85rem' }}>
-                            Field<br />
-                            <select
-                              value={editForm.field_id}
-                              onChange={e => setEditForm(p => ({ ...p, field_id: e.target.value }))}
-                              style={inputStyle}
-                            >
-                              {Object.values(fields).map(f => (
-                                <option key={f.id} value={f.id}>{f.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label style={{ fontSize: '0.85rem' }}>
-                            Status<br />
-                            <select
-                              value={editForm.status}
-                              onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}
-                              style={inputStyle}
-                            >
-                              <option value="scheduled">Scheduled</option>
-                              <option value="cancelled">Cancelled</option>
-                              <option value="completed">Completed</option>
-                            </select>
-                          </label>
-                          <button onClick={() => saveEdit(game.id)} className="btn btn-primary" style={{ fontSize: '0.85rem' }}>
-                            Save
-                          </button>
-                          <button onClick={cancelEdit} className="btn" style={{ fontSize: '0.85rem', background: '#eee' }}>
-                            Cancel
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
+      {/* Division-first view (#32) */}
+      {selectedSeasonId && !gamesLoading && sortOrder === 'division' && (
+        <>
+          {orderedDivisions.length === 0
+            ? allDates.map(date => renderDateCard(date, gamesByDate[date] ?? [], blackoutDateSet.has(date)))
+            : orderedDivisions.map(div => {
+                const divGames = games.filter(g => g.division_id === div.id)
+                if (divGames.length === 0) return null
+                const divDates = [...new Set(divGames.map(g => g.game_date))].sort()
+                return (
+                  <div key={div.id}>
+                    <h2 style={{ margin: '1.5rem 0 0.5rem', fontSize: '1.1rem', color: '#1a5276', borderBottom: '2px solid #e0e7ef', paddingBottom: '0.25rem' }}>
+                      {div.name}
+                    </h2>
+                    {divDates.map(date => {
+                      const dateGames = divGames.filter(g => g.game_date === date).sort((a, b) => a.start_time.localeCompare(b.start_time))
+                      return renderDateCard(date, dateGames, false, div.id)
+                    })}
+                  </div>
+                )
+              })
+          }
+          {seasonBlackouts.length > 0 && (
+            <div>
+              <h2 style={{ margin: '1.5rem 0 0.5rem', fontSize: '1.1rem', color: '#856404', borderBottom: '2px solid #ffc107', paddingBottom: '0.25rem' }}>
+                Blackout Dates
+              </h2>
+              {[...seasonBlackouts].sort((a, b) => a.blackout_date.localeCompare(b.blackout_date)).map(b => (
+                <div key={b.id} className="card" style={{ padding: '0.75rem 1.5rem', background: '#fff8e1', borderLeft: '4px solid #ffc107' }}>
+                  <span style={{ fontSize: '0.9rem', color: '#856404' }}>
+                    {new Date(b.blackout_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </span>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

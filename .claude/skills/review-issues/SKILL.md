@@ -7,7 +7,7 @@ allowed-tools: Bash(gh *), Read, Grep, Glob
 
 ## Current open issues (active sprint)
 
-!`gh issue list --state open --label '!backlog' --json number,title,labels,body --limit 50`
+!`gh issue list --state open --json number,title,labels,body --limit 50 | jq '[.[] | select(.labels | map(.name) | contains(["backlog"]) | not)]'`
 
 ## Backlog issues (deferred — do not include in the plan)
 

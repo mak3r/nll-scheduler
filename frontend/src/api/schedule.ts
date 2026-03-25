@@ -87,6 +87,8 @@ export const gamesApi = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+  create: (seasonId: string, data: { home_team_id: string; away_team_id: string; field_id: string; game_date: string; start_time: string; division_id: string }) =>
+    scheduleApi<Game>(`/seasons/${seasonId}/games`, { method: 'POST', body: JSON.stringify(data) }),
   delete: (seasonId: string, gameId: string) =>
     scheduleApi<void>(`/seasons/${seasonId}/games/${gameId}`, { method: 'DELETE' }),
   checkConflicts: (seasonId: string) =>

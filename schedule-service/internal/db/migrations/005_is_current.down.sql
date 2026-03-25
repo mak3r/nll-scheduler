@@ -1,0 +1,1 @@
+ALTER TABLE seasons DROP COLUMN IF EXISTS is_current;

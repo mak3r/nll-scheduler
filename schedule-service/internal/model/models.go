@@ -12,6 +12,7 @@ type Season struct {
 	StartDate   string    `json:"start_date"` // "2025-04-01"
 	EndDate     string    `json:"end_date"`
 	Status      string    `json:"status"` // draft|generating|review|published
+	IsCurrent   bool      `json:"is_current"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

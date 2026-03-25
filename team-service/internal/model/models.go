@@ -6,6 +6,7 @@ type Division struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	SeasonYear int       `json:"season_year"`
+	SeasonID   string    `json:"season_id,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

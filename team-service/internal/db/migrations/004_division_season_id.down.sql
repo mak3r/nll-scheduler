@@ -1,0 +1,1 @@
+ALTER TABLE divisions DROP COLUMN IF EXISTS season_id;

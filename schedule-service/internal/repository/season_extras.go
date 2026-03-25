@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/jackc/pgx/v5"
@@ -295,6 +296,26 @@ func (r *SeasonExtrasRepo) UpdateConstraint(ctx context.Context, id string, c mo
 	}
 	out.Params = params
 	return &out, nil
+}
+
+// UpsertAutoInjectedConstraint persists an auto-injected soft constraint.
+// It removes any existing auto-injected constraint of the same type for the season
+// and inserts a fresh one with "auto_injected":true in params.
+func (r *SeasonExtrasRepo) UpsertAutoInjectedConstraint(ctx context.Context, seasonID, constraintType string, params json.RawMessage, weight float64) error {
+	_, err := r.db.Exec(ctx,
+		`DELETE FROM season_constraints
+		 WHERE season_id=$1 AND type=$2 AND params @> '{"auto_injected":true}'`,
+		seasonID, constraintType,
+	)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx,
+		`INSERT INTO season_constraints (season_id, type, params, is_hard, weight)
+		 VALUES ($1, $2, $3::jsonb, false, $4)`,
+		seasonID, constraintType, []byte(params), weight,
+	)
+	return err
 }
 
 func (r *SeasonExtrasRepo) DeleteConstraint(ctx context.Context, id string) error {

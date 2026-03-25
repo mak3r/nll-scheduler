@@ -99,6 +99,10 @@ export default function SeasonsPage() {
     end_date: '',
   })
 
+  // Edit season form
+  const [editingSeason, setEditingSeason] = useState(false)
+  const [editSeasonForm, setEditSeasonForm] = useState({ name: '', division_ids: [] as string[], start_date: '', end_date: '' })
+
   // Blackout form
   const [newBlackout, setNewBlackout] = useState('')
 
@@ -201,6 +205,39 @@ export default function SeasonsPage() {
       await seasonsApi.delete(id)
       if (selectedId === id) setSelectedId(null)
       await loadInitial()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  async function setCurrentSeason(id: string) {
+    try {
+      await seasonsApi.setCurrent(id)
+      await loadInitial()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  function startEditSeason() {
+    if (!selectedSeason) return
+    setEditSeasonForm({
+      name: selectedSeason.name,
+      division_ids: selectedSeason.division_ids || [],
+      start_date: selectedSeason.start_date,
+      end_date: selectedSeason.end_date,
+    })
+    setEditingSeason(true)
+  }
+
+  async function saveEditSeason(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedId) return
+    try {
+      await seasonsApi.update(selectedId, editSeasonForm)
+      setEditingSeason(false)
+      await loadInitial()
+      await loadDetail(selectedId)
     } catch (e) {
       setError(String(e))
     }
@@ -430,9 +467,16 @@ export default function SeasonsPage() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <strong style={{ fontSize: '0.95rem' }}>{s.name}</strong>
-                    <span style={{ background: sc.bg, color: sc.color, padding: '1px 8px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 600 }}>
-                      {s.status}
-                    </span>
+                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                      {s.is_current && (
+                        <span style={{ background: '#d4edda', color: '#155724', padding: '1px 8px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 600 }}>
+                          current
+                        </span>
+                      )}
+                      <span style={{ background: sc.bg, color: sc.color, padding: '1px 8px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 600 }}>
+                        {s.status}
+                      </span>
+                    </div>
                   </div>
                   <div style={{ fontSize: '0.8rem', color: '#666', marginTop: 2 }}>
                     {(s.division_ids || []).map(id => divisionMap[id] || id).join(', ') || '—'} &middot; {s.start_date} &rarr; {s.end_date}
@@ -452,28 +496,98 @@ export default function SeasonsPage() {
           ) : (
             <>
               <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h2 style={{ margin: 0 }}>{selectedSeason.name}</h2>
-                    <div style={{ color: '#666', fontSize: '0.9rem', marginTop: 4 }}>
-                      {(selectedSeason.division_ids || []).map(id => divisionMap[id] || id).join(', ') || '—'}
-                      {' '}&middot;{' '}
-                      {selectedSeason.start_date} &rarr; {selectedSeason.end_date}
+                {editingSeason ? (
+                  <form onSubmit={saveEditSeason} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label>
+                      Name<br />
+                      <input
+                        value={editSeasonForm.name}
+                        onChange={e => setEditSeasonForm(p => ({ ...p, name: e.target.value }))}
+                        required
+                        style={{ ...inputStyle, width: '100%' }}
+                      />
+                    </label>
+                    <fieldset style={{ border: '1px solid #ccc', borderRadius: 4, padding: '0.4rem 0.75rem' }}>
+                      <legend style={{ fontSize: '0.9rem' }}>Divisions</legend>
+                      {divisions.map(d => (
+                        <label key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={editSeasonForm.division_ids.includes(d.id)}
+                            onChange={e => {
+                              if (e.target.checked) {
+                                setEditSeasonForm(p => ({ ...p, division_ids: [...p.division_ids, d.id] }))
+                              } else {
+                                setEditSeasonForm(p => ({ ...p, division_ids: p.division_ids.filter(id => id !== d.id) }))
+                              }
+                            }}
+                          />
+                          {d.name} ({d.season_year})
+                        </label>
+                      ))}
+                    </fieldset>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <label style={{ flex: 1 }}>
+                        Start Date<br />
+                        <input
+                          type="date"
+                          value={editSeasonForm.start_date}
+                          onChange={e => setEditSeasonForm(p => ({ ...p, start_date: e.target.value }))}
+                          required
+                          style={{ ...inputStyle, width: '100%' }}
+                        />
+                      </label>
+                      <label style={{ flex: 1 }}>
+                        End Date<br />
+                        <input
+                          type="date"
+                          value={editSeasonForm.end_date}
+                          onChange={e => setEditSeasonForm(p => ({ ...p, end_date: e.target.value }))}
+                          required
+                          style={{ ...inputStyle, width: '100%' }}
+                        />
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button type="submit" className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Save</button>
+                      <button type="button" onClick={() => setEditingSeason(false)} className="btn" style={{ fontSize: '0.85rem' }}>Cancel</button>
+                    </div>
+                  </form>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h2 style={{ margin: 0 }}>{selectedSeason.name}</h2>
+                        {selectedSeason.is_current && (
+                          <span style={{ background: '#d4edda', color: '#155724', padding: '1px 8px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 600 }}>
+                            current
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ color: '#666', fontSize: '0.9rem', marginTop: 4 }}>
+                        {(selectedSeason.division_ids || []).map(id => divisionMap[id] || id).join(', ') || '—'}
+                        {' '}&middot;{' '}
+                        {selectedSeason.start_date} &rarr; {selectedSeason.end_date}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {!selectedSeason.is_current && (
+                        <button onClick={() => setCurrentSeason(selectedSeason.id)} className="btn" style={{ fontSize: '0.85rem' }}>Set as Current</button>
+                      )}
+                      <button onClick={startEditSeason} className="btn" style={{ fontSize: '0.85rem' }}>Edit</button>
+                      <Link
+                        to={`/schedule?season=${selectedSeason.id}`}
+                        className="btn btn-primary"
+                        style={{ fontSize: '0.85rem', textDecoration: 'none' }}
+                      >
+                        View Schedule
+                      </Link>
+                      <button onClick={() => deleteSeason(selectedSeason.id)} className="btn btn-danger" style={{ fontSize: '0.85rem' }}>
+                        Delete Season
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <Link
-                      to={`/schedule?season=${selectedSeason.id}`}
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.85rem', textDecoration: 'none' }}
-                    >
-                      View Schedule
-                    </Link>
-                    <button onClick={() => deleteSeason(selectedSeason.id)} className="btn btn-danger" style={{ fontSize: '0.85rem' }}>
-                      Delete Season
-                    </button>
-                  </div>
-                </div>
+                )}
 
                 {/* Generation */}
                 <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
@@ -661,10 +775,17 @@ export default function SeasonsPage() {
                     )}
                     {constraints.map(c => {
                       const def = CONSTRAINT_TYPES[c.type]
+                      const isAutoInjected = c.params.auto_injected === true
+                      const displayParams = Object.entries(c.params).filter(([k]) => k !== 'auto_injected')
                       return (
-                        <div key={c.id} style={{ ...rowStyle, flexWrap: 'wrap', gap: '0.25rem' }}>
+                        <div key={c.id} style={{ ...rowStyle, flexWrap: 'wrap', gap: '0.25rem', opacity: isAutoInjected ? 0.65 : 1 }}>
                           <div>
                             <strong style={{ fontSize: '0.9rem' }}>{def?.label || c.type}</strong>
+                            {isAutoInjected && (
+                              <span style={{ marginLeft: '0.4rem', background: '#e9ecef', color: '#555', padding: '1px 6px', borderRadius: 10, fontSize: '0.72rem' }} title="Auto-injected based on division/team settings">
+                                auto
+                              </span>
+                            )}
                             <span style={{
                               marginLeft: '0.5rem',
                               background: c.is_hard ? '#fde8d8' : '#e8f4d8',
@@ -675,13 +796,15 @@ export default function SeasonsPage() {
                             }}>
                               {c.is_hard ? 'hard' : `soft w=${c.weight}`}
                             </span>
-                            {Object.keys(c.params).length > 0 && (
+                            {displayParams.length > 0 && (
                               <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem', color: '#555' }}>
-                                {Object.entries(c.params).map(([k, v]) => `${k}: ${v}`).join(', ')}
+                                {displayParams.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}
                               </span>
                             )}
                           </div>
-                          <button onClick={() => removeConstraint(c.id)} className="btn btn-danger" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Delete</button>
+                          {!isAutoInjected && (
+                            <button onClick={() => removeConstraint(c.id)} className="btn btn-danger" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Delete</button>
+                          )}
                         </div>
                       )
                     })}

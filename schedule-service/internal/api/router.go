@@ -47,6 +47,7 @@ func NewRouter(pool *pgxpool.Pool, teamServiceURL, fieldServiceURL, schedulerEng
 			r.Get("/", h.GetSeason)
 			r.Put("/", h.UpdateSeason)
 			r.Delete("/", h.DeleteSeason)
+			r.Post("/set-current", h.SetCurrentSeason)
 
 			r.Route("/blackout-dates", func(r chi.Router) {
 				r.Get("/", h.ListSeasonBlackouts)
@@ -170,6 +171,24 @@ func (h *Handler) DeleteSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) SetCurrentSeason(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "seasonID")
+	if err := h.seasons.SetCurrentSeason(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "season not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s, err := h.seasons.Get(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
 }
 
 // Blackout handlers

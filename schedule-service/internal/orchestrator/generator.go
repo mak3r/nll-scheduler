@@ -332,6 +332,7 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		if !hasPrefFields {
 			params, _ := json.Marshal(map[string]interface{}{
 				"division_preferred_fields": divisionPreferredFields,
+				"auto_injected":             true,
 			})
 			solverConstraints = append(solverConstraints, SolverConstraint{
 				Type:   "prefer_fields",
@@ -340,6 +341,42 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 				Weight: 1.0,
 			})
 			log.Printf("auto-injected prefer_fields constraint for %d divisions", len(divisionPreferredFields))
+			if err := g.extras.UpsertAutoInjectedConstraint(ctx, seasonID, "prefer_fields", json.RawMessage(params), 1.0); err != nil {
+				log.Printf("warn: failed to persist auto-injected prefer_fields constraint: %v", err)
+			}
+		}
+	}
+
+	// Auto-inject prefer_home_field soft constraint when any team has a home_field_id.
+	teamHomeFields := make(map[string]string)
+	for _, t := range allTeams {
+		if t.HomeFieldID != nil && *t.HomeFieldID != "" {
+			teamHomeFields[t.ID] = *t.HomeFieldID
+		}
+	}
+	if len(teamHomeFields) > 0 {
+		hasHomeField := false
+		for _, c := range solverConstraints {
+			if c.Type == "prefer_home_field" {
+				hasHomeField = true
+				break
+			}
+		}
+		if !hasHomeField {
+			params, _ := json.Marshal(map[string]interface{}{
+				"team_home_fields": teamHomeFields,
+				"auto_injected":    true,
+			})
+			solverConstraints = append(solverConstraints, SolverConstraint{
+				Type:   "prefer_home_field",
+				Params: json.RawMessage(params),
+				IsHard: false,
+				Weight: 1.0,
+			})
+			log.Printf("auto-injected prefer_home_field constraint for %d teams", len(teamHomeFields))
+			if err := g.extras.UpsertAutoInjectedConstraint(ctx, seasonID, "prefer_home_field", json.RawMessage(params), 1.0); err != nil {
+				log.Printf("warn: failed to persist auto-injected prefer_home_field constraint: %v", err)
+			}
 		}
 	}
 

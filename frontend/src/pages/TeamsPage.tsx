@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { divisionsApi, teamsApiClient, type Division, type Team, type DivisionFieldRule } from '../api/teams'
+import { divisionsApi, teamsApiClient, type Division, type Team, type DivisionFieldRule, type MatchupRule } from '../api/teams'
 import { fieldsApiClient, type Field } from '../api/fields'
+import { seasonsApi, type Season } from '../api/schedule'
 
 export default function TeamsPage() {
   const [divisions, setDivisions] = useState<Division[]>([])
@@ -8,11 +9,14 @@ export default function TeamsPage() {
   const [allFields, setAllFields] = useState<Field[]>([])
   const [fieldRules, setFieldRules] = useState<Record<string, DivisionFieldRule[]>>({})
   const [newRuleForms, setNewRuleForms] = useState<Record<string, { fieldId: string; ruleType: 'allowed' | 'preferred' }>>({})
+  const [matchupRules, setMatchupRules] = useState<Record<string, MatchupRule[]>>({})
+  const [newMatchupForms, setNewMatchupForms] = useState<Record<string, { teamAId: string; teamBId: string; minGames: number; maxGames: number }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [seasons, setSeasons] = useState<Season[]>([])
 
   const [newDivName, setNewDivName] = useState('')
-  const [newDivYear, setNewDivYear] = useState(new Date().getFullYear())
+  const [newDivSeasonId, setNewDivSeasonId] = useState('')
 
   const [newTeamForms, setNewTeamForms] = useState<Record<string, {
     name: string; shortCode: string; teamType: string
@@ -28,20 +32,31 @@ export default function TeamsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [divs, fields] = await Promise.all([
+      const [divs, fields, seasonList] = await Promise.all([
         divisionsApi.list(),
         fieldsApiClient.list(),
+        seasonsApi.list(),
       ])
+      setSeasons(seasonList)
+      // Pre-select the current season if not already set
+      setNewDivSeasonId(prev => {
+        if (prev) return prev
+        const current = seasonList.find(s => s.is_current)
+        return current?.id ?? (seasonList[0]?.id ?? '')
+      })
       setDivisions(divs)
       setAllFields(fields.filter(f => f.is_active))
       const teamsMap: Record<string, Team[]> = {}
       const rulesMap: Record<string, DivisionFieldRule[]> = {}
+      const matchupMap: Record<string, MatchupRule[]> = {}
       await Promise.all(divs.map(async (d) => {
         try {
           const result = await divisionsApi.getTeamsWithRules(d.id)
           teamsMap[d.id] = result.teams
+          matchupMap[d.id] = result.matchup_rules
         } catch {
           teamsMap[d.id] = []
+          matchupMap[d.id] = []
         }
         try {
           rulesMap[d.id] = await divisionsApi.listFieldRules(d.id)
@@ -51,6 +66,7 @@ export default function TeamsPage() {
       }))
       setTeams(teamsMap)
       setFieldRules(rulesMap)
+      setMatchupRules(matchupMap)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -61,7 +77,16 @@ export default function TeamsPage() {
   async function createDivision(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await divisionsApi.create({ name: newDivName, season_year: newDivYear })
+      const selectedSeason = seasons.find(s => s.id === newDivSeasonId)
+      const seasonYear = selectedSeason
+        ? new Date(selectedSeason.start_date).getFullYear()
+        : new Date().getFullYear()
+      const d = await divisionsApi.create({ name: newDivName, season_year: seasonYear, season_id: newDivSeasonId })
+      // Also link this division to the season in schedule-service
+      if (newDivSeasonId && selectedSeason) {
+        const updatedIds = [...(selectedSeason.division_ids || []), d.id]
+        await seasonsApi.update(newDivSeasonId, { division_ids: updatedIds })
+      }
       setNewDivName('')
       await loadData()
     } catch (e) {
@@ -195,6 +220,36 @@ export default function TeamsPage() {
     }
   }
 
+  function getMatchupForm(divId: string) {
+    return newMatchupForms[divId] || { teamAId: '', teamBId: '', minGames: 2, maxGames: 2 }
+  }
+
+  async function addMatchupRule(e: React.FormEvent, divId: string) {
+    e.preventDefault()
+    const form = getMatchupForm(divId)
+    if (!form.teamAId || !form.teamBId || form.teamAId === form.teamBId) return
+    try {
+      await teamsApiClient.createMatchupRule(form.teamAId, {
+        team_b_id: form.teamBId,
+        min_games: form.minGames,
+        max_games: form.maxGames,
+      })
+      setNewMatchupForms(prev => { const n = { ...prev }; delete n[divId]; return n })
+      await loadData()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  async function removeMatchupRule(teamAId: string, ruleId: string) {
+    try {
+      await teamsApiClient.deleteMatchupRule(teamAId, ruleId)
+      await loadData()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   const inputStyle: React.CSSProperties = {
     padding: '0.4rem',
     borderRadius: 4,
@@ -230,14 +285,20 @@ export default function TeamsPage() {
           </div>
           <div>
             <label>
-              Year<br />
-              <input
-                type="number"
-                value={newDivYear}
-                onChange={e => setNewDivYear(Number(e.target.value))}
+              Season<br />
+              <select
+                value={newDivSeasonId}
+                onChange={e => setNewDivSeasonId(e.target.value)}
                 required
-                style={{ ...inputStyle, width: 90 }}
-              />
+                style={inputStyle}
+              >
+                <option value="">— Select a season —</option>
+                {seasons.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.is_current ? ' (current)' : ''}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
           <button type="submit" className="btn btn-primary">Add Division</button>
@@ -465,6 +526,101 @@ export default function TeamsPage() {
                   <option value="allowed">allowed</option>
                   <option value="preferred">preferred</option>
                 </select>
+              </label>
+              <button type="submit" className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Add Rule</button>
+            </form>
+          </div>
+
+          {/* Matchup Rules */}
+          <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>Matchup Rules</h3>
+            <p style={{ color: '#666', fontSize: '0.83rem', margin: '0 0 0.5rem' }}>
+              Override how many times specific team pairs play each other. Leave empty to use the division default.
+            </p>
+            {(matchupRules[div.id] || []).length > 0 && (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.75rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #eee', textAlign: 'left' }}>
+                    <th style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>Team A</th>
+                    <th style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>Team B</th>
+                    <th style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>Min</th>
+                    <th style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>Max</th>
+                    <th style={{ padding: '0.3rem 0.4rem' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(matchupRules[div.id] || []).map(rule => {
+                    const teamA = (teams[div.id] || []).find(t => t.id === rule.team_a_id)
+                    const teamB = (teams[div.id] || []).find(t => t.id === rule.team_b_id)
+                    return (
+                      <tr key={rule.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>{teamA?.name || rule.team_a_id}</td>
+                        <td style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>{teamB?.name || rule.team_b_id}</td>
+                        <td style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>{rule.min_games}</td>
+                        <td style={{ padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}>{rule.max_games}</td>
+                        <td style={{ padding: '0.3rem 0.4rem' }}>
+                          <button
+                            onClick={() => removeMatchupRule(rule.team_a_id, rule.id)}
+                            className="btn btn-danger"
+                            style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+            <form onSubmit={e => addMatchupRule(e, div.id)} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label>
+                Team A<br />
+                <select
+                  value={getMatchupForm(div.id).teamAId}
+                  onChange={e => setNewMatchupForms(prev => ({ ...prev, [div.id]: { ...getMatchupForm(div.id), teamAId: e.target.value } }))}
+                  required
+                  style={inputStyle}
+                >
+                  <option value="">Select team...</option>
+                  {(teams[div.id] || []).map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Team B<br />
+                <select
+                  value={getMatchupForm(div.id).teamBId}
+                  onChange={e => setNewMatchupForms(prev => ({ ...prev, [div.id]: { ...getMatchupForm(div.id), teamBId: e.target.value } }))}
+                  required
+                  style={inputStyle}
+                >
+                  <option value="">Select team...</option>
+                  {(teams[div.id] || []).filter(t => t.id !== getMatchupForm(div.id).teamAId).map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Min<br />
+                <input
+                  type="number"
+                  min="1"
+                  value={getMatchupForm(div.id).minGames}
+                  onChange={e => setNewMatchupForms(prev => ({ ...prev, [div.id]: { ...getMatchupForm(div.id), minGames: Number(e.target.value) } }))}
+                  style={{ ...inputStyle, width: 60 }}
+                />
+              </label>
+              <label>
+                Max<br />
+                <input
+                  type="number"
+                  min="1"
+                  value={getMatchupForm(div.id).maxGames}
+                  onChange={e => setNewMatchupForms(prev => ({ ...prev, [div.id]: { ...getMatchupForm(div.id), maxGames: Number(e.target.value) } }))}
+                  style={{ ...inputStyle, width: 60 }}
+                />
               </label>
               <button type="submit" className="btn btn-primary" style={{ fontSize: '0.85rem' }}>Add Rule</button>
             </form>

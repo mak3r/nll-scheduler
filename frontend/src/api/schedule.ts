@@ -7,6 +7,7 @@ export interface Season {
   start_date: string
   end_date: string
   status: 'draft' | 'generating' | 'review' | 'published'
+  is_current: boolean
   created_at: string
 }
 
@@ -59,11 +60,12 @@ export interface GenerationRun {
 
 export const seasonsApi = {
   list: () => scheduleApi<Season[]>('/seasons'),
-  create: (data: Omit<Season, 'id' | 'status' | 'created_at'>) =>
+  create: (data: Omit<Season, 'id' | 'status' | 'is_current' | 'created_at'>) =>
     scheduleApi<Season>('/seasons', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: Partial<Omit<Season, 'id' | 'created_at'>>) =>
     scheduleApi<Season>(`/seasons/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) => scheduleApi<void>(`/seasons/${id}`, { method: 'DELETE' }),
+  setCurrent: (id: string) => scheduleApi<Season>(`/seasons/${id}/set-current`, { method: 'POST' }),
 }
 
 export const constraintsApi = {

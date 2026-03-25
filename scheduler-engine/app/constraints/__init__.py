@@ -16,6 +16,7 @@ from app.constraints.daily_limit import (
 )
 from app.constraints.interleague import PreferInterleagueDatesConstraint
 from app.constraints.prefer_fields import PreferFieldsConstraint
+from app.constraints.prefer_home_field import PreferHomeFieldConstraint
 from app.constraints.rest import (
     MaxGamesPerTeamPerWeekConstraint,
     MinRestDaysBetweenGamesConstraint,
@@ -30,6 +31,7 @@ REGISTRY: dict[str, ConstraintHandler] = {
     "prefer_interleague_dates": PreferInterleagueDatesConstraint(),
     "even_home_away_balance": EvenHomeAwayBalanceConstraint(),
     "prefer_fields": PreferFieldsConstraint(),
+    "prefer_home_field": PreferHomeFieldConstraint(),
     "no_same_day_repeat_matchup": NoSameDayRepeatMatchupConstraint(),
     "prefer_max_one_game_per_day": PreferMaxOneGamePerDayConstraint(),
 }

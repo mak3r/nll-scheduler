@@ -416,13 +416,23 @@ export default function SchedulePage() {
             <tbody>
               {gamesByDate[date].map((game, idx) => (
                 <Fragment key={game.id}>
-                  <tr style={{ borderBottom: '1px solid #f0f0f0', background: isDoubleHeader(game) ? '#fffbea' : undefined }}>
+                  <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
                     <td style={tdStyle}>{game.start_time}</td>
                     <td style={{ ...tdStyle, color: '#555', fontSize: '0.83rem' }}>
                       {divisions[game.division_id]?.name ?? game.division_id ?? '—'}
                     </td>
-                    <td style={tdStyle}>{teams[game.home_team_id]?.name || game.home_team_id}</td>
-                    <td style={tdStyle}>{teams[game.away_team_id]?.name || game.away_team_id}</td>
+                    <td style={tdStyle}>
+                      {doubleHeaderKeys.has(`${game.game_date}:${game.home_team_id}`)
+                        ? <span style={{ background: '#fff3cd', borderRadius: 3, padding: '0 3px' }} title="Plays twice today">{teams[game.home_team_id]?.name || game.home_team_id}</span>
+                        : (teams[game.home_team_id]?.name || game.home_team_id)
+                      }
+                    </td>
+                    <td style={tdStyle}>
+                      {doubleHeaderKeys.has(`${game.game_date}:${game.away_team_id}`)
+                        ? <span style={{ background: '#fff3cd', borderRadius: 3, padding: '0 3px' }} title="Plays twice today">{teams[game.away_team_id]?.name || game.away_team_id}</span>
+                        : (teams[game.away_team_id]?.name || game.away_team_id)
+                      }
+                    </td>
                     <td style={tdStyle}>{fields[game.field_id]?.name || game.field_id}</td>
                     <td style={tdStyle}>
                       <span style={{
@@ -452,7 +462,7 @@ export default function SchedulePage() {
                         </span>
                       )}
                       {isDoubleHeader(game) && (
-                        <span style={{ background: '#fff3cd', color: '#856404', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', marginLeft: game.is_interleague ? 4 : 0 }} title="One or more teams play twice today">
+                        <span style={{ background: '#fff3cd', color: '#856404', padding: '1px 8px', borderRadius: 10, fontSize: '0.75rem', marginLeft: game.is_interleague ? 4 : 0 }} title="Team(s) play twice today">
                           double-header
                         </span>
                       )}

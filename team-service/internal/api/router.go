@@ -72,7 +72,8 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 // Division handlers
 
 func (h *Handler) ListDivisions(w http.ResponseWriter, r *http.Request) {
-	divisions, err := h.divisions.List(r.Context())
+	seasonID := r.URL.Query().Get("season_id")
+	divisions, err := h.divisions.List(r.Context(), seasonID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -84,6 +85,7 @@ func (h *Handler) CreateDivision(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`
 		SeasonYear int    `json:"season_year"`
+		SeasonID   string `json:"season_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -93,7 +95,7 @@ func (h *Handler) CreateDivision(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	d, err := h.divisions.Create(r.Context(), req.Name, req.SeasonYear)
+	d, err := h.divisions.Create(r.Context(), req.Name, req.SeasonYear, req.SeasonID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -120,12 +122,13 @@ func (h *Handler) UpdateDivision(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name       string `json:"name"`
 		SeasonYear int    `json:"season_year"`
+		SeasonID   string `json:"season_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	d, err := h.divisions.Update(r.Context(), id, req.Name, req.SeasonYear)
+	d, err := h.divisions.Update(r.Context(), id, req.Name, req.SeasonYear, req.SeasonID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "division not found")

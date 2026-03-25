@@ -15,7 +15,7 @@ func NewSeasonRepo(db *pgxpool.Pool) *SeasonRepo { return &SeasonRepo{db: db} }
 
 const seasonSelect = `
 	SELECT s.id, s.name, s.start_date::text, s.end_date::text, s.status,
-	       s.created_at, s.updated_at,
+	       s.is_current, s.created_at, s.updated_at,
 	       COALESCE(
 	         array_agg(sd.division_id::text ORDER BY sd.division_id)
 	           FILTER (WHERE sd.division_id IS NOT NULL),
@@ -28,7 +28,7 @@ func scanSeason(row pgx.Row) (*model.Season, error) {
 	var s model.Season
 	if err := row.Scan(
 		&s.ID, &s.Name, &s.StartDate, &s.EndDate, &s.Status,
-		&s.CreatedAt, &s.UpdatedAt, &s.DivisionIDs,
+		&s.IsCurrent, &s.CreatedAt, &s.UpdatedAt, &s.DivisionIDs,
 	); err != nil {
 		return nil, err
 	}
@@ -192,6 +192,26 @@ func (r *SeasonRepo) UpdateStatus(ctx context.Context, id, status string) error 
 		`UPDATE seasons SET status=$1, updated_at=NOW() WHERE id=$2`,
 		status, id)
 	return err
+}
+
+func (r *SeasonRepo) SetCurrentSeason(ctx context.Context, id string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if _, err := tx.Exec(ctx, `UPDATE seasons SET is_current = false WHERE is_current = true`); err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx, `UPDATE seasons SET is_current = true, updated_at = NOW() WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
 }
 
 // insertDivisions bulk-inserts division_ids for a season within an existing transaction.

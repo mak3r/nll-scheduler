@@ -2,7 +2,6 @@ name: team-service
 
 on:
   push:
-    branches: [main]
     paths:
       - 'team-service/**'
       - '.github/workflows/team-service.yml'
@@ -44,7 +43,7 @@ jobs:
   build-push:
     name: Build & Push
     needs: lint-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,7 +74,7 @@ jobs:
   update-manifest:
     name: Update manifest
     needs: build-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -89,7 +88,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main
+            git pull --rebase origin ${{ github.ref_name }}
             cd k8s/prod
             kustomize edit set image ${{ env.IMAGE }}:${{ github.sha }}
             cd ../..

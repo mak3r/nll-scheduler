@@ -51,6 +51,74 @@ curl http://<public_ip>/api/teams/health
 | `app_version` | `main` | Git branch/tag for manifest version |
 | `key_name` | `""` | EC2 key pair for SSH (empty = no SSH access) |
 
+## Branch-based Test Environments
+
+Use a feature branch to pin a test environment to a specific version of the app — isolated from ongoing changes on `main`.
+
+### How it works
+
+Each CI workflow builds and pushes images on **any branch push** (not just `main`). After a successful build it commits updated image SHA tags to `k8s/prod/kustomization.yaml` **on that same branch**. ArgoCD on the test environment watches that branch, so it tracks exactly the images from your branch and nothing else.
+
+```
+your-branch push → CI builds images → CI updates k8s/prod/kustomization.yaml on your-branch
+                                                          ↓
+                                         ArgoCD auto-syncs the test environment
+```
+
+### Step-by-step
+
+**1. Create and push your branch**
+```bash
+git checkout -b my-feature
+# make changes
+git push -u origin my-feature
+```
+
+**2. Wait for CI to complete**
+
+GitHub Actions will run lint/test/build/push for each changed service and commit updated image tags to `k8s/prod/kustomization.yaml` on `my-feature`. Watch the Actions tab — the "Update manifest" step must succeed before provisioning.
+
+**3. Configure terraform.tfvars**
+```bash
+cd infra/tenant
+cp terraform.tfvars.example terraform.tfvars
+```
+Set `app_version` to your branch name:
+```hcl
+tester_name = "mark"
+ami_id      = "ami-02ac0271dfcad44a2"
+app_version = "my-feature"   # ← your branch
+```
+
+Use a unique `tester_name` per environment if running multiple simultaneously (e.g. `mark-feature-x`).
+
+**4. Provision the environment**
+```bash
+tofu init   # first time only
+tofu apply
+```
+
+The output `app_url` is the environment's URL. Allow ~10–15 minutes for cloud-init to finish.
+
+**5. Push further changes**
+
+Any subsequent push to `my-feature` that touches a service will trigger CI again — new images built, `kustomization.yaml` updated on the branch, ArgoCD auto-syncs within ~3 minutes. No manual action needed.
+
+**6. Tear down when done**
+```bash
+tofu destroy
+```
+
+### Notes
+
+- The test environment only reacts to pushes that change service code or workflow files (path filters are still active). Pushing changes to `infra/` or `k8s/` alone won't trigger a build.
+- If you need to force an immediate ArgoCD sync without waiting for the poll interval, SSH into the instance and run:
+  ```bash
+  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  kubectl annotate application nll-scheduler -n argocd argocd.argoproj.io/refresh=hard --overwrite
+  ```
+- `kustomization.yaml` on a new branch starts from wherever `main` was when you branched. Only services you push changes to will get their image tags updated on the branch — others keep the inherited SHA from `main`, which is intentional.
+
 ## Teardown
 
 ```bash

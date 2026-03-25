@@ -33,4 +33,4 @@ images:
 - name: ghcr.io/mak3r/nll-scheduler/scheduler-engine
   newTag: 77967562b9c4ff5e6b8a658930503020835f5796
 - name: ghcr.io/mak3r/nll-scheduler/team-service
-  newTag: 2251f28469646ef0e0c73a1f6d7f8ea225aeec41
+  newTag: 5eb98045311ada5ff101ce409f421272678d048b

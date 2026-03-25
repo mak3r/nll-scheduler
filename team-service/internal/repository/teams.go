@@ -22,7 +22,7 @@ func scanTeam(row pgx.Row) (*model.Team, error) {
 	var t model.Team
 	if err := row.Scan(
 		&t.ID, &t.DivisionID, &t.Name, &t.ShortCode,
-		&t.TeamType, &t.HomeFieldID, &t.GamesRequired,
+		&t.TeamType, &t.HomeFieldID,
 		&t.CreatedAt, &t.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func scanTeamRow(rows pgx.Rows) (model.Team, error) {
 	var t model.Team
 	if err := rows.Scan(
 		&t.ID, &t.DivisionID, &t.Name, &t.ShortCode,
-		&t.TeamType, &t.HomeFieldID, &t.GamesRequired,
+		&t.TeamType, &t.HomeFieldID,
 		&t.CreatedAt, &t.UpdatedAt,
 	); err != nil {
 		return model.Team{}, err
@@ -42,7 +42,7 @@ func scanTeamRow(rows pgx.Rows) (model.Team, error) {
 	return t, nil
 }
 
-const teamColumns = `id, division_id, name, short_code, team_type, home_field_id, games_required, created_at, updated_at`
+const teamColumns = `id, division_id, name, short_code, team_type, home_field_id, created_at, updated_at`
 
 func (r *TeamRepo) List(ctx context.Context, divisionID string) ([]model.Team, error) {
 	var (
@@ -83,10 +83,10 @@ func (r *TeamRepo) List(ctx context.Context, divisionID string) ([]model.Team, e
 
 func (r *TeamRepo) Create(ctx context.Context, t model.Team) (*model.Team, error) {
 	row := r.db.QueryRow(ctx,
-		fmt.Sprintf(`INSERT INTO teams (division_id, name, short_code, team_type, home_field_id, games_required)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		fmt.Sprintf(`INSERT INTO teams (division_id, name, short_code, team_type, home_field_id)
+		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING %s`, teamColumns),
-		t.DivisionID, t.Name, t.ShortCode, t.TeamType, t.HomeFieldID, t.GamesRequired,
+		t.DivisionID, t.Name, t.ShortCode, t.TeamType, t.HomeFieldID,
 	)
 	return scanTeam(row)
 }
@@ -110,10 +110,10 @@ func (r *TeamRepo) Update(ctx context.Context, id string, t model.Team) (*model.
 	row := r.db.QueryRow(ctx,
 		fmt.Sprintf(`UPDATE teams
 		 SET division_id = $1, name = $2, short_code = $3, team_type = $4,
-		     home_field_id = $5, games_required = $6, updated_at = NOW()
-		 WHERE id = $7
+		     home_field_id = $5, updated_at = NOW()
+		 WHERE id = $6
 		 RETURNING %s`, teamColumns),
-		t.DivisionID, t.Name, t.ShortCode, t.TeamType, t.HomeFieldID, t.GamesRequired, id,
+		t.DivisionID, t.Name, t.ShortCode, t.TeamType, t.HomeFieldID, id,
 	)
 	updated, err := scanTeam(row)
 	if err != nil {
@@ -142,17 +142,16 @@ func (r *TeamRepo) Delete(ctx context.Context, id string) error {
 func (r *TeamRepo) Upsert(ctx context.Context, t model.Team) error {
 	_, err := r.db.Exec(ctx,
 		fmt.Sprintf(`INSERT INTO teams (%s)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 ON CONFLICT (id) DO UPDATE
-		   SET division_id    = EXCLUDED.division_id,
-		       name           = EXCLUDED.name,
-		       short_code     = EXCLUDED.short_code,
-		       team_type      = EXCLUDED.team_type,
-		       home_field_id  = EXCLUDED.home_field_id,
-		       games_required = EXCLUDED.games_required,
-		       updated_at     = EXCLUDED.updated_at`, teamColumns),
+		   SET division_id   = EXCLUDED.division_id,
+		       name          = EXCLUDED.name,
+		       short_code    = EXCLUDED.short_code,
+		       team_type     = EXCLUDED.team_type,
+		       home_field_id = EXCLUDED.home_field_id,
+		       updated_at    = EXCLUDED.updated_at`, teamColumns),
 		t.ID, t.DivisionID, t.Name, t.ShortCode, t.TeamType,
-		t.HomeFieldID, t.GamesRequired, t.CreatedAt, t.UpdatedAt,
+		t.HomeFieldID, t.CreatedAt, t.UpdatedAt,
 	)
 	return err
 }

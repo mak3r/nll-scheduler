@@ -14,7 +14,6 @@ class TeamSchema(BaseModel):
     name: str
     division_id: str
     team_type: str  # "local" | "interleague"
-    games_required: int = 20
 
 
 class MatchupRule(BaseModel):

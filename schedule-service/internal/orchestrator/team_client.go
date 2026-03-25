@@ -26,13 +26,12 @@ func NewTeamClient(baseURL string) *TeamClient {
 }
 
 type Team struct {
-	ID            string  `json:"id"`
-	DivisionID    string  `json:"division_id"`
-	Name          string  `json:"name"`
-	ShortCode     string  `json:"short_code"`
-	TeamType      string  `json:"team_type"`
-	HomeFieldID   *string `json:"home_field_id"`
-	GamesRequired int     `json:"games_required"`
+	ID          string  `json:"id"`
+	DivisionID  string  `json:"division_id"`
+	Name        string  `json:"name"`
+	ShortCode   string  `json:"short_code"`
+	TeamType    string  `json:"team_type"`
+	HomeFieldID *string `json:"home_field_id"`
 }
 
 type MatchupRule struct {

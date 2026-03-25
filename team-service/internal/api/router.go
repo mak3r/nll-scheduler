@@ -233,9 +233,6 @@ func (h *Handler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and division_id are required")
 		return
 	}
-	if req.GamesRequired == 0 {
-		req.GamesRequired = 20
-	}
 	t, err := h.teams.Create(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

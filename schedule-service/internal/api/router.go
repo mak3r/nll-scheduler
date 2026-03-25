@@ -14,20 +14,22 @@ import (
 )
 
 type Handler struct {
-	seasons   *repository.SeasonRepo
-	extras    *repository.SeasonExtrasRepo
-	games     *repository.GamesRepo
-	genRuns   *repository.GenerationRunsRepo
-	generator *orchestrator.Generator
+	seasons      *repository.SeasonRepo
+	extras       *repository.SeasonExtrasRepo
+	games        *repository.GamesRepo
+	genRuns      *repository.GenerationRunsRepo
+	divGamesReq  *repository.DivisionGamesRequiredRepo
+	generator    *orchestrator.Generator
 }
 
 func NewRouter(pool *pgxpool.Pool, teamServiceURL, fieldServiceURL, schedulerEngineURL string) *chi.Mux {
 	h := &Handler{
-		seasons:   repository.NewSeasonRepo(pool),
-		extras:    repository.NewSeasonExtrasRepo(pool),
-		games:     repository.NewGamesRepo(pool),
-		genRuns:   repository.NewGenerationRunsRepo(pool),
-		generator: orchestrator.NewGenerator(pool, teamServiceURL, fieldServiceURL, schedulerEngineURL),
+		seasons:     repository.NewSeasonRepo(pool),
+		extras:      repository.NewSeasonExtrasRepo(pool),
+		games:       repository.NewGamesRepo(pool),
+		genRuns:     repository.NewGenerationRunsRepo(pool),
+		divGamesReq: repository.NewDivisionGamesRequiredRepo(pool),
+		generator:   orchestrator.NewGenerator(pool, teamServiceURL, fieldServiceURL, schedulerEngineURL),
 	}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -75,6 +77,11 @@ func NewRouter(pool *pgxpool.Pool, teamServiceURL, fieldServiceURL, schedulerEng
 					r.Put("/", h.UpdateGame)
 					r.Delete("/", h.DeleteGame)
 				})
+			})
+
+			r.Route("/division-games-required", func(r chi.Router) {
+				r.Get("/", h.ListDivisionGamesRequired)
+				r.Put("/{divisionID}", h.UpsertDivisionGamesRequired)
 			})
 
 			r.Post("/generate", h.GenerateSchedule)
@@ -426,6 +433,38 @@ func detectConflicts(games []model.Game) []string {
 		conflicts = []string{}
 	}
 	return conflicts
+}
+
+func (h *Handler) ListDivisionGamesRequired(w http.ResponseWriter, r *http.Request) {
+	seasonID := chi.URLParam(r, "seasonID")
+	items, err := h.divGamesReq.ListBySeason(r.Context(), seasonID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) UpsertDivisionGamesRequired(w http.ResponseWriter, r *http.Request) {
+	seasonID := chi.URLParam(r, "seasonID")
+	divisionID := chi.URLParam(r, "divisionID")
+	var req struct {
+		GamesRequired int `json:"games_required"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.GamesRequired < 1 {
+		writeError(w, http.StatusBadRequest, "games_required must be at least 1")
+		return
+	}
+	result, err := h.divGamesReq.Upsert(r.Context(), seasonID, divisionID, req.GamesRequired)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) GenerateSchedule(w http.ResponseWriter, r *http.Request) {

@@ -14,7 +14,6 @@ export interface Team {
   short_code: string
   team_type: 'local' | 'interleague'
   home_field_id?: string
-  games_required: number
 }
 
 export interface MatchupRule {

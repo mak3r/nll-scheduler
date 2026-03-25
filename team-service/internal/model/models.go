@@ -11,15 +11,14 @@ type Division struct {
 }
 
 type Team struct {
-	ID            string    `json:"id"`
-	DivisionID    string    `json:"division_id"`
-	Name          string    `json:"name"`
-	ShortCode     string    `json:"short_code"`
-	TeamType      string    `json:"team_type"` // "local" | "interleague"
-	HomeFieldID   *string   `json:"home_field_id,omitempty"`
-	GamesRequired int       `json:"games_required"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	DivisionID  string    `json:"division_id"`
+	Name        string    `json:"name"`
+	ShortCode   string    `json:"short_code"`
+	TeamType    string    `json:"team_type"` // "local" | "interleague"
+	HomeFieldID *string   `json:"home_field_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type MatchupRule struct {

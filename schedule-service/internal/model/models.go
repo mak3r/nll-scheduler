@@ -57,6 +57,15 @@ type Game struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type DivisionGamesRequired struct {
+	ID           string    `json:"id"`
+	SeasonID     string    `json:"season_id"`
+	DivisionID   string    `json:"division_id"`
+	GamesRequired int      `json:"games_required"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type GenerationRun struct {
 	ID           string          `json:"id"`
 	SeasonID     string          `json:"season_id"`

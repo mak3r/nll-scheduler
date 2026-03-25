@@ -144,3 +144,20 @@ export const generationApi = {
   getStatus: (seasonId: string, runId: string) =>
     scheduleApi<GenerationRun>(`/seasons/${seasonId}/generate/${runId}`),
 }
+
+export interface DivisionGamesRequired {
+  id: string
+  season_id: string
+  division_id: string
+  games_required: number
+}
+
+export const divisionGamesRequiredApi = {
+  list: (seasonId: string) =>
+    scheduleApi<DivisionGamesRequired[]>(`/seasons/${seasonId}/division-games-required`),
+  upsert: (seasonId: string, divisionId: string, gamesRequired: number) =>
+    scheduleApi<DivisionGamesRequired>(`/seasons/${seasonId}/division-games-required/${divisionId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ games_required: gamesRequired }),
+    }),
+}

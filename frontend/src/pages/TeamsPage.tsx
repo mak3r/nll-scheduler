@@ -15,11 +15,12 @@ export default function TeamsPage() {
   const [newDivYear, setNewDivYear] = useState(new Date().getFullYear())
 
   const [newTeamForms, setNewTeamForms] = useState<Record<string, {
-    name: string; shortCode: string; teamType: string; gamesRequired: number
+    name: string; shortCode: string; teamType: string
   }>>({})
 
+  const [bulkForms, setBulkForms] = useState<Record<string, { text: string; teamType: string; submitting: boolean }>>({})
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
-  const [editTeamForm, setEditTeamForm] = useState({ name: '', shortCode: '', teamType: 'local', gamesRequired: 20, divisionId: '', homeFieldId: undefined as string | undefined })
+  const [editTeamForm, setEditTeamForm] = useState({ name: '', shortCode: '', teamType: 'local', divisionId: '', homeFieldId: undefined as string | undefined })
 
   useEffect(() => { loadData() }, [])
 
@@ -79,7 +80,7 @@ export default function TeamsPage() {
   }
 
   function getTeamForm(divId: string) {
-    return newTeamForms[divId] || { name: '', shortCode: '', teamType: 'local', gamesRequired: 20 }
+    return newTeamForms[divId] || { name: '', shortCode: '', teamType: 'local' }
   }
 
   function setTeamForm(divId: string, updates: Partial<ReturnType<typeof getTeamForm>>) {
@@ -95,7 +96,6 @@ export default function TeamsPage() {
         name: form.name,
         short_code: form.shortCode,
         team_type: form.teamType as 'local' | 'interleague',
-        games_required: form.gamesRequired,
       })
       setNewTeamForms(prev => { const n = { ...prev }; delete n[divId]; return n })
       await loadData()
@@ -114,13 +114,40 @@ export default function TeamsPage() {
     }
   }
 
+  function getBulkForm(divId: string) {
+    return bulkForms[divId] || { text: '', teamType: 'local', submitting: false }
+  }
+
+  async function submitBulkAdd(e: React.FormEvent, divId: string) {
+    e.preventDefault()
+    const form = getBulkForm(divId)
+    const names = form.text.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+    if (names.length === 0) return
+    setBulkForms(prev => ({ ...prev, [divId]: { ...getBulkForm(divId), submitting: true } }))
+    try {
+      for (const name of names) {
+        const initials = name.split(/\s+/).map(w => w[0]?.toUpperCase() ?? '').join('').slice(0, 4) || name.slice(0, 3).toUpperCase()
+        await teamsApiClient.create({
+          division_id: divId,
+          name,
+          short_code: initials,
+          team_type: form.teamType as 'local' | 'interleague',
+        })
+      }
+      setBulkForms(prev => { const n = { ...prev }; delete n[divId]; return n })
+      await loadData()
+    } catch (e) {
+      setError(String(e))
+      setBulkForms(prev => ({ ...prev, [divId]: { ...getBulkForm(divId), submitting: false } }))
+    }
+  }
+
   function startEditTeam(team: Team) {
     setEditingTeamId(team.id)
     setEditTeamForm({
       name: team.name,
       shortCode: team.short_code,
       teamType: team.team_type,
-      gamesRequired: team.games_required,
       divisionId: team.division_id,
       homeFieldId: team.home_field_id,
     })
@@ -134,7 +161,6 @@ export default function TeamsPage() {
         short_code: editTeamForm.shortCode,
         team_type: editTeamForm.teamType as 'local' | 'interleague',
         home_field_id: editTeamForm.homeFieldId,
-        games_required: editTeamForm.gamesRequired,
       })
       setEditingTeamId(null)
       await loadData()
@@ -231,14 +257,13 @@ export default function TeamsPage() {
                 <th style={{ padding: '0.4rem' }}>Name</th>
                 <th style={{ padding: '0.4rem' }}>Code</th>
                 <th style={{ padding: '0.4rem' }}>Type</th>
-                <th style={{ padding: '0.4rem' }}>Games Required</th>
                 <th style={{ padding: '0.4rem' }}></th>
               </tr>
             </thead>
             <tbody>
               {(teams[div.id] || []).length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '0.75rem 0.4rem', color: '#888', fontStyle: 'italic' }}>
+                  <td colSpan={4} style={{ padding: '0.75rem 0.4rem', color: '#888', fontStyle: 'italic' }}>
                     No teams yet. Add one below.
                   </td>
                 </tr>
@@ -257,9 +282,6 @@ export default function TeamsPage() {
                           <option value="local">Local</option>
                           <option value="interleague">Interleague</option>
                         </select>
-                      </td>
-                      <td style={{ padding: '0.4rem' }}>
-                        <input type="number" value={editTeamForm.gamesRequired} min={1} onChange={e => setEditTeamForm(p => ({ ...p, gamesRequired: Number(e.target.value) }))} style={{ ...inputStyle, width: 60 }} />
                       </td>
                       <td style={{ padding: '0.4rem', display: 'flex', gap: '0.25rem' }}>
                         <button onClick={() => saveTeam(team.id)} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Save</button>
@@ -281,7 +303,6 @@ export default function TeamsPage() {
                           {team.team_type}
                         </span>
                       </td>
-                      <td style={{ padding: '0.4rem' }}>{team.games_required}</td>
                       <td style={{ padding: '0.4rem', display: 'flex', gap: '0.25rem' }}>
                         <button onClick={() => startEditTeam(team)} className="btn btn-primary" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Edit</button>
                         <button onClick={() => deleteTeam(team.id)} className="btn btn-danger" style={{ fontSize: '0.8rem', padding: '2px 10px' }}>Delete</button>
@@ -328,18 +349,48 @@ export default function TeamsPage() {
                 <option value="interleague">Interleague</option>
               </select>
             </label>
-            <label>
-              Games Required<br />
-              <input
-                type="number"
-                value={getTeamForm(div.id).gamesRequired}
-                onChange={e => setTeamForm(div.id, { gamesRequired: Number(e.target.value) })}
-                min={1}
-                style={{ ...inputStyle, width: 70 }}
-              />
-            </label>
             <button type="submit" className="btn btn-primary">Add Team</button>
           </form>
+
+          {/* Bulk Add Teams */}
+          <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>Bulk Add Teams</h3>
+            <form onSubmit={e => submitBulkAdd(e, div.id)} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <label>
+                Team Names (one per line or comma-separated)<br />
+                <textarea
+                  value={getBulkForm(div.id).text}
+                  onChange={e => setBulkForms(prev => ({ ...prev, [div.id]: { ...getBulkForm(div.id), text: e.target.value } }))}
+                  placeholder={'Red Sox\nBlue Jays\nYankees'}
+                  rows={3}
+                  style={{ ...inputStyle, width: 220, fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </label>
+              <label>
+                Type<br />
+                <select
+                  value={getBulkForm(div.id).teamType}
+                  onChange={e => setBulkForms(prev => ({ ...prev, [div.id]: { ...getBulkForm(div.id), teamType: e.target.value } }))}
+                  style={inputStyle}
+                >
+                  <option value="local">Local</option>
+                  <option value="interleague">Interleague</option>
+                </select>
+              </label>
+              <div>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={getBulkForm(div.id).submitting || !getBulkForm(div.id).text.trim()}
+                >
+                  {getBulkForm(div.id).submitting ? 'Adding…' : 'Bulk Add'}
+                </button>
+                <div style={{ fontSize: '0.78rem', color: '#666', marginTop: '0.25rem' }}>
+                  Short codes auto-generated from initials
+                </div>
+              </div>
+            </form>
+          </div>
 
           {/* Field Access Rules */}
           <div style={{ borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>

@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nll-scheduler/schedule-service/internal/model"
@@ -24,6 +22,7 @@ type Generator struct {
 	extras          *repository.SeasonExtrasRepo
 	games           *repository.GamesRepo
 	genRuns         *repository.GenerationRunsRepo
+	divGamesReq     *repository.DivisionGamesRequiredRepo
 }
 
 func NewGenerator(
@@ -39,6 +38,7 @@ func NewGenerator(
 		extras:          repository.NewSeasonExtrasRepo(db),
 		games:           repository.NewGamesRepo(db),
 		genRuns:         repository.NewGenerationRunsRepo(db),
+		divGamesReq:     repository.NewDivisionGamesRequiredRepo(db),
 	}
 }
 
@@ -201,15 +201,24 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		return fmt.Errorf("load constraints: %w", err)
 	}
 
-	// 6. Build solver request
+	// 6. Load division-level games_required for this season
+	divGamesReqList, err := g.divGamesReq.ListBySeason(ctx, seasonID)
+	if err != nil {
+		return fmt.Errorf("load division games_required: %w", err)
+	}
+	divGamesRequired := make(map[string]int, len(divGamesReqList))
+	for _, dgr := range divGamesReqList {
+		divGamesRequired[dgr.DivisionID] = dgr.GamesRequired
+	}
+
+	// Build solver request
 	solverTeams := make([]SolverTeam, len(allTeams))
 	for i, t := range allTeams {
 		solverTeams[i] = SolverTeam{
-			ID:            t.ID,
-			Name:          t.Name,
-			DivisionID:    t.DivisionID,
-			TeamType:      t.TeamType,
-			GamesRequired: t.GamesRequired,
+			ID:         t.ID,
+			Name:       t.Name,
+			DivisionID: t.DivisionID,
+			TeamType:   t.TeamType,
 		}
 	}
 
@@ -234,13 +243,12 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		if len(divTeams) < 2 {
 			continue
 		}
-		totalRequired := 0
-		for _, t := range divTeams {
-			totalRequired += t.GamesRequired
+		gamesReq, ok := divGamesRequired[divID]
+		if !ok {
+			gamesReq = 20 // default if not configured
 		}
-		avgRequired := totalRequired / len(divTeams)
 		nPairs := len(divTeams) - 1
-		gamesPerPair := (avgRequired + nPairs/2) / nPairs
+		gamesPerPair := (gamesReq + nPairs/2) / nPairs
 		if gamesPerPair < 1 {
 			gamesPerPair = 1
 		}
@@ -260,7 +268,7 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 				}
 			}
 		}
-		log.Printf("division %s: %d teams, games_per_pair=%d", divLabel(divID), len(divTeams), gamesPerPair)
+		log.Printf("division %s: %d teams, games_per_pair=%d (games_required=%d)", divLabel(divID), len(divTeams), gamesPerPair, gamesReq)
 	}
 
 	solverMatchupRules := make([]SolverMatchupRule, len(allMatchupRules))
@@ -357,49 +365,19 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 			break
 		}
 	}
-	maxPerWeek := 2
-	for _, c := range solverConstraints {
-		if c.Type == "max_games_per_team_per_week" {
-			var p map[string]interface{}
-			if err := json.Unmarshal(c.Params, &p); err == nil {
-				if v, ok := p["max_games_per_week"]; ok {
-					switch n := v.(type) {
-					case float64:
-						maxPerWeek = int(n)
-					case int:
-						maxPerWeek = n
-					}
-				}
-			}
-			break
-		}
-	}
-	seasonStart, _ := time.Parse("2006-01-02", season.StartDate)
-	seasonEnd, _ := time.Parse("2006-01-02", season.EndDate)
-	seasonWeeks := int(math.Ceil(seasonEnd.Sub(seasonStart).Hours() / (24 * 7)))
-
 	for _, divID := range season.DivisionIDs {
 		divTeams := teamsByDiv[divID]
 		if len(divTeams) < 2 {
 			continue
 		}
-		totalRequired := 0
-		for _, t := range divTeams {
-			totalRequired += t.GamesRequired
+		gamesReq, ok := divGamesRequired[divID]
+		if !ok {
+			gamesReq = 20
 		}
-		avgRequired := totalRequired / len(divTeams)
 		nPairs := len(divTeams) - 1
-		gamesPerPair := (avgRequired + nPairs/2) / nPairs
+		gamesPerPair := (gamesReq + nPairs/2) / nPairs
 		if gamesPerPair < 1 {
 			gamesPerPair = 1
-		}
-
-		maxAchievable := maxPerWeek * seasonWeeks
-		if gamesPerPair > maxAchievable {
-			return fmt.Errorf(
-				"infeasible for division %s: need %d games per team but max_games_per_team_per_week=%d over %d weeks only allows %d",
-				divLabel(divID), gamesPerPair, maxPerWeek, seasonWeeks, maxAchievable,
-			)
 		}
 
 		// Determine which fields this division can use
@@ -508,9 +486,31 @@ func (g *Generator) runGeneration(ctx context.Context, runID, seasonID string) e
 		return fmt.Errorf("persist games: %w", err)
 	}
 
-	// 9. Mark run as success
+	// 9. Check for under-delivery and build warning message
+	var warningMsg *string
+	var statsData SolverStatsWithCounts
+	if err := json.Unmarshal(solveResp.SolverStats, &statsData); err == nil && len(statsData.PerTeamGameCounts) > 0 {
+		var shortfalls []string
+		for _, t := range allTeams {
+			actual := statsData.PerTeamGameCounts[t.ID]
+			gamesReq := divGamesRequired[t.DivisionID]
+			if gamesReq == 0 {
+				gamesReq = 20
+			}
+			if actual < gamesReq {
+				shortfalls = append(shortfalls, fmt.Sprintf("%s: got %d, need %d", t.Name, actual, gamesReq))
+			}
+		}
+		if len(shortfalls) > 0 {
+			msg := fmt.Sprintf("Some teams received fewer games than required: %s", strings.Join(shortfalls, "; "))
+			warningMsg = &msg
+			log.Printf("Generation warning for season %s: %s", seasonID, msg)
+		}
+	}
+
+	// Mark run as success
 	statsJSON, _ := json.Marshal(solveResp.SolverStats)
-	if err := g.genRuns.UpdateStatus(ctx, runID, "success", statsJSON, nil); err != nil {
+	if err := g.genRuns.UpdateStatus(ctx, runID, "success", statsJSON, warningMsg); err != nil {
 		return err
 	}
 	if err := g.seasons.UpdateStatus(ctx, seasonID, "review"); err != nil {

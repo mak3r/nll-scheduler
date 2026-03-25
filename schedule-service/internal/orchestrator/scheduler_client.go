@@ -48,11 +48,10 @@ type SolveRequest struct {
 }
 
 type SolverTeam struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	DivisionID    string `json:"division_id"`
-	TeamType      string `json:"team_type"`
-	GamesRequired int    `json:"games_required"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	DivisionID string `json:"division_id"`
+	TeamType   string `json:"team_type"`
 }
 
 type SolverMatchupRule struct {
@@ -89,6 +88,11 @@ type SolveResponse struct {
 	Games            []SolverGame    `json:"games"`
 	SolverStats      json.RawMessage `json:"solver_stats"`
 	UnmetConstraints []string        `json:"unmet_constraints"`
+}
+
+// SolverStatsWithCounts is used to extract per_team_game_counts from solver_stats.
+type SolverStatsWithCounts struct {
+	PerTeamGameCounts map[string]int `json:"per_team_game_counts"`
 }
 
 type SolverGame struct {
